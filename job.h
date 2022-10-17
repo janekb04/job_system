@@ -104,12 +104,20 @@ public:
     ALWAYS_INLINE auto await_transform(Job &&j) {
       return await_transform(when_all(std::forward<Job>(j)));
     }
+    template <typename Future> ALWAYS_INLINE auto await_transform(Future &&f) {
+      return await_transform(when_all(std::forward<Future>(f)));
+    }
 
-    template <typename... Jobs, size_t... I>
+    template <typename... Jobs>
       requires(is_job<std::decay_t<Jobs>> && ...)
     ALWAYS_INLINE auto await_transform(when_all_t<Jobs &&...> jobs) {
       return await_transform_impl(std::move(jobs),
                                   std::index_sequence_for<Jobs...>{});
+    }
+    template <typename... Futures>
+    ALWAYS_INLINE auto await_transform(when_all_t<Futures &&...> futures) {
+      return await_transform_impl(std::move(futures),
+                                  std::index_sequence_for<Futures...>{});
     }
 
     ALWAYS_INLINE void unhandled_exception() noexcept {
@@ -124,34 +132,40 @@ public:
     template <typename... Jobs, size_t... I>
       requires(is_job<std::decay_t<Jobs>> && ...)
     ALWAYS_INLINE auto await_transform_impl(when_all_t<Jobs &&...> jobs,
+                                            std::index_sequence<I...> seq) {
+      return await_transform_impl(
+          when_all(std::forward_like<Jobs>(std::get<I>(jobs).get_future())...),
+          seq);
+    }
+    template <typename... Futures, size_t... I>
+    ALWAYS_INLINE auto await_transform_impl(when_all_t<Futures &&...> futures,
                                             std::index_sequence<I...>) {
       struct awaiter {
-        ALWAYS_INLINE awaiter(promise &p, when_all_t<Jobs &&...> jobs)
-            : ns{unpack_forward<I>(p.get_notifiable())...},
-              fs{std::get<I>(jobs).get_future()...} {
-          (std::get<I>(jobs).get_future().notify_on_job_completion(ns[I]), ...);
+        ALWAYS_INLINE awaiter(promise &p, when_all_t<Futures &&...> futures)
+            : ns{unpack_forward<I>(p.get_notifiable())...}, fs{futures} {
+          (std::get<I>(futures).notify_on_job_completion(ns[I]), ...);
         }
         ALWAYS_INLINE constexpr bool await_ready() const noexcept {
           return false;
         }
         constexpr decltype(auto) await_resume() const noexcept {
-          if constexpr (sizeof...(Jobs) == 1) {
-            return (std::forward_like<Jobs>(std::get<0>(fs).get()), ...);
+          if constexpr (sizeof...(Futures) == 1) {
+            return (std::forward_like<Futures>(std::get<0>(fs).get()), ...);
           } else {
-            return std::tuple<decltype(std::forward_like<Jobs>(
+            return std::tuple<decltype(std::forward_like<Futures>(
                 std::get<I>(fs).get()))...>{
-                std::forward_like<Jobs>(std::get<I>(fs).get())...};
+                std::forward_like<Futures>(std::get<I>(fs).get())...};
           }
         }
         ALWAYS_INLINE std::coroutine_handle<> await_suspend(handle h) {
           return h.promise()._suspend();
         }
-        notifiable ns[sizeof...(Jobs)];
-        std::tuple<future_of<Jobs>...> fs;
+        notifiable ns[sizeof...(Futures)];
+        std::tuple<Futures...> fs;
       };
 
-      reset_sync(sizeof...(Jobs));
-      return awaiter{*this, std::move(jobs)};
+      reset_sync(sizeof...(Futures));
+      return awaiter{*this, std::move(futures)};
     }
 
   public: // interface to future
@@ -179,7 +193,8 @@ public:
     friend class notifiable;
 
   private:
-    value_or_exception<T, !Noexcept> _return_value_storage;
+    [[no_unique_address]] value_or_exception<T, !Noexcept>
+        _return_value_storage;
   };
   class future {
   public:
