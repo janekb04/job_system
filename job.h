@@ -76,7 +76,7 @@ public:
       };
       return awaiter{};
     }
-    ALWAYS_INLINE constexpr std::suspend_always final_suspend() const noexcept {
+    ALWAYS_INLINE constexpr std::suspend_always final_suspend() noexcept {
       signal_completion();
       return {};
     };
@@ -144,9 +144,10 @@ public:
         ALWAYS_INLINE awaiter(promise &p, when_all_t<Futures &&...> futures)
             : ns{unpack_forward<I>(p.get_notifiable())...}, fs{futures} {
           (std::get<I>(futures).notify_on_job_completion(ns[I]), ...);
+          ready = p.is_ready_before_launch();
         }
         ALWAYS_INLINE constexpr bool await_ready() const noexcept {
-          return false;
+          return ready;
         }
         constexpr decltype(auto) await_resume() const noexcept {
           if constexpr (sizeof...(Futures) == 1) {
@@ -158,10 +159,12 @@ public:
           }
         }
         ALWAYS_INLINE std::coroutine_handle<> await_suspend(handle h) {
+          h.promise().sync_atomic_synchronize();
           return h.promise()._suspend();
         }
         notifiable ns[sizeof...(Futures)];
         std::tuple<Futures...> fs;
+        bool ready;
       };
 
       reset_sync(sizeof...(Futures));
