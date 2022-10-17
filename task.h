@@ -16,14 +16,14 @@ class notifiable {
 };
 
 class task {
-  size_t _sync = 0;
-  notifiable *_to_notify_head = nullptr;
+  std::atomic<size_t> _sync = 0;
+  std::atomic<notifiable *> _to_notify_head = nullptr;
 
 private:
   template <typename Func>
   ALWAYS_INLINE constexpr void _for_each_to_notify(Func &&func) const
       noexcept(std::is_nothrow_invocable_v<Func, task &>) {
-    notifiable *p = _to_notify_head;
+    notifiable *p = _to_notify_head.load(std::memory_order_acquire);
     while (p) [[likely]] {
       task *to_notify = p->_to_notify;
       p = p->_next; // prefetch the next node from memory
@@ -36,18 +36,17 @@ public:
     return {*this};
   }
   ALWAYS_INLINE constexpr void reset_sync(size_t count) noexcept {
-    _sync = count;
+    _sync.store(count, std::memory_order_relaxed);
   }
   ALWAYS_INLINE void notify_on_completion(notifiable &to_append) noexcept {
-    // std::atomic_ref head{_to_notify_head};
-    // to_append._next = head.exchange(&to_append, acq_rel);
-    to_append._next = std::exchange(_to_notify_head, &to_append);
+    to_append._next =
+        _to_notify_head.exchange(&to_append, std::memory_order_relaxed);
+    std::atomic_thread_fence(std::memory_order_release);
   }
   [[gnu::noinline]] void signal_completion() const noexcept {
     _for_each_to_notify([](task &to_notify) {
-      // std::atomic_ref sync{to_notify._sync};
-      // if(sync.fetch_sub(1, acq_rel) == 1) [[unlikely]] {
-      if (to_notify._sync-- == 1) [[unlikely]] {
+      if (to_notify._sync.fetch_sub(1, std::memory_order_relaxed) == 1)
+          [[unlikely]] {
         scheduler.add_ready_to_resume(to_notify);
       }
     });
