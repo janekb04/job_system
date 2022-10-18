@@ -55,24 +55,16 @@ class task
     ALWAYS_INLINE bool notify_on_completion(notifiable& to_append) noexcept
     {
         notifiable* old_value = _to_notify_head.load(std::memory_order_relaxed);
-        while (!_to_notify_head.compare_exchange_weak(
-            old_value,
-            reinterpret_cast<size_t>(old_value) == COMPLETED_SENTINEL ? old_value
-                                                                      : &to_append,
-            std::memory_order_relaxed))
+        do
         {
-        }
-        if (reinterpret_cast<size_t>(old_value) == COMPLETED_SENTINEL)
-        {
-            to_append._to_notify->_sync.fetch_sub(1, std::memory_order_relaxed);
-            return true;
-        }
-        else
-        {
+            if (reinterpret_cast<size_t>(old_value) == COMPLETED_SENTINEL)
+            {
+                to_append._to_notify->_sync.fetch_sub(1, std::memory_order_relaxed);
+                return true;
+            }
             to_append._next = old_value;
-            std::atomic_thread_fence(std::memory_order_release);
-            return false;
-        }
+        } while (!_to_notify_head.compare_exchange_weak(old_value, &to_append, std::memory_order_relaxed));
+        return false;
     }
     ALWAYS_INLINE void signal_completion() noexcept
     {
