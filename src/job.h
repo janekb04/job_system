@@ -142,11 +142,17 @@ public:
                                             std::index_sequence<I...>) {
       struct awaiter {
         ALWAYS_INLINE awaiter(promise &p, when_all_t<Futures &&...> futures)
-            : ns{unpack_forward<I>(p.get_notifiable())...}, fs{futures} {
-          (std::get<I>(futures).notify_on_job_completion(ns[I]), ...);
-          ready = p.is_ready_before_launch();
-        }
-        ALWAYS_INLINE constexpr bool await_ready() const noexcept {
+            : ns{unpack_forward<I>(p.get_notifiable())...}, fs{futures} {}
+        ALWAYS_INLINE constexpr bool await_ready() noexcept {
+          int dependencies_already_done =
+              (static_cast<int>(
+                   std::get<I>(fs).notify_on_job_completion(ns[I])) +
+               ...);
+          bool ready = false;
+          if (dependencies_already_done == sizeof...(Futures)) {
+            // current job wasn't added to the scheduler, we must not suspend
+            ready = true;
+          }
           return ready;
         }
         constexpr decltype(auto) await_resume() const noexcept {
@@ -159,12 +165,10 @@ public:
           }
         }
         ALWAYS_INLINE std::coroutine_handle<> await_suspend(handle h) {
-          h.promise().sync_atomic_synchronize();
           return h.promise()._suspend();
         }
         notifiable ns[sizeof...(Futures)];
         std::tuple<Futures...> fs;
-        bool ready;
       };
 
       reset_sync(sizeof...(Futures));
@@ -176,8 +180,8 @@ public:
     get_return_value() noexcept(noexcept(_return_value_storage.get())) {
       return _return_value_storage.get();
     }
-    ALWAYS_INLINE void notify_on_job_completion(notifiable &n) {
-      notify_on_completion(n);
+    ALWAYS_INLINE bool notify_on_job_completion(notifiable &n) {
+      return notify_on_completion(n);
     }
 
   private: // interface to promise_return_helper_t
@@ -205,8 +209,8 @@ public:
     ALWAYS_INLINE constexpr T &get() const noexcept(Noexcept) {
       return _p.get_return_value();
     }
-    ALWAYS_INLINE void notify_on_job_completion(notifiable &n) const noexcept {
-      _p.notify_on_job_completion(n);
+    ALWAYS_INLINE bool notify_on_job_completion(notifiable &n) const noexcept {
+      return _p.notify_on_job_completion(n);
     }
 
   private:

@@ -42,13 +42,7 @@ public:
   ALWAYS_INLINE constexpr void reset_sync(size_t count) noexcept {
     deatomize(_sync) = count;
   }
-  ALWAYS_INLINE constexpr void sync_atomic_synchronize() noexcept {
-    _sync.store(deatomize(_sync), std::memory_order_relaxed);
-  }
-  ALWAYS_INLINE constexpr bool is_ready_before_launch() const noexcept {
-    return deatomize(_sync) == 0;
-  }
-  ALWAYS_INLINE void notify_on_completion(notifiable &to_append) noexcept {
+  ALWAYS_INLINE bool notify_on_completion(notifiable &to_append) noexcept {
     notifiable *old_value = _to_notify_head.load(std::memory_order_relaxed);
     while (!_to_notify_head.compare_exchange_weak(
         old_value,
@@ -57,10 +51,12 @@ public:
         std::memory_order_relaxed)) {
     }
     if (reinterpret_cast<size_t>(old_value) == COMPLETED_SENTINEL) {
-      --deatomize(to_append._to_notify->_sync); // non-atomic on purpose
+      to_append._to_notify->_sync.fetch_sub(1, std::memory_order_relaxed);
+      return true;
     } else {
       to_append._next = old_value;
       std::atomic_thread_fence(std::memory_order_release);
+      return false;
     }
   }
   [[gnu::noinline]] void signal_completion() noexcept {
