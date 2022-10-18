@@ -198,11 +198,8 @@ class basic_job
                 }
                 ALWAYS_INLINE constexpr bool await_ready() noexcept
                 {
-                    int dependencies_already_done =
-                        (static_cast<int>(
-                             std::get<I>(fs).notify_on_job_completion(ns[I])) +
-                         ...);
-                    bool ready = false;
+                    int  dependencies_already_done = (static_cast<int>(std::get<I>(fs).notify_on_job_completion(ns[I])) + ...);
+                    bool ready                     = false;
                     if (dependencies_already_done == sizeof...(Futures))
                     {
                         // current job wasn't added to the scheduler, we must not suspend
@@ -224,9 +221,9 @@ class basic_job
                         };
                     }
                 }
-                ALWAYS_INLINE std::coroutine_handle<> await_suspend(handle h)
+                ALWAYS_INLINE std::coroutine_handle<> await_suspend(handle)
                 {
-                    return h.promise()._suspend();
+                    return std::coroutine_handle<task>::from_promise(scheduler.get_next_task());
                 }
                 notifiable             ns[sizeof...(Futures)];
                 std::tuple<Futures...> fs;
@@ -256,12 +253,7 @@ class basic_job
         }
         friend class promise_return_helper_t<promise, T>;
 
-        private: // helper methods
-        ALWAYS_INLINE std::coroutine_handle<> _suspend()
-        {
-            return std::coroutine_handle<task>::from_promise(
-                scheduler.get_next_task());
-        }
+        private:
         friend class notifiable;
 
         private:
