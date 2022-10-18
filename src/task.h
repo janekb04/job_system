@@ -63,7 +63,7 @@ class task
                 return true;
             }
             to_append._next = old_value;
-        } while (!_to_notify_head.compare_exchange_weak(old_value, &to_append, std::memory_order_relaxed));
+        } while (!_to_notify_head.compare_exchange_weak(old_value, &to_append, std::memory_order_release));
         return false;
     }
     ALWAYS_INLINE void signal_completion() noexcept
