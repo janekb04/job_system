@@ -207,7 +207,7 @@ class basic_job
                     }
                     return ready;
                 }
-                constexpr decltype(auto) await_resume() const noexcept
+                ALWAYS_INLINE constexpr decltype(auto) await_resume() const noexcept
                 {
                     if constexpr (sizeof...(Futures) == 1)
                     {
