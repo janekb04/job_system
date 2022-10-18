@@ -1,5 +1,5 @@
 find_package(Threads REQUIRED)
-add_executable(test main.cpp)
+add_executable(test main.cpp set_affinity.cpp)
 target_compile_features(test PRIVATE cxx_std_20)
 target_compile_options(test PRIVATE -fcoroutines-ts)
 target_link_libraries(test PRIVATE Threads::Threads)

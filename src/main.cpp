@@ -6,6 +6,7 @@
 // #include "ban_heap.h"
 #include "compat.h"
 #include "job.h"
+#include "set_affinity.h"
 #include "value_or_error.h"
 
 template <int I> static job<int> test_coro() {
@@ -59,6 +60,7 @@ template <int Iters> void compare() {
 }
 
 int main() {
+  set_this_process_priority_high();
   for (int i = 0; i < 10000; ++i) {
     compare<23>();
     std::cout << '\n';
