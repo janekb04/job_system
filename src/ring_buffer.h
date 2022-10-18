@@ -8,17 +8,20 @@
 
 constexpr size_t SZ = 1 << 30;
 
-template <typename T>
-  requires std::is_trivially_destructible_v<T>
-class ring_buffer_base {
-protected:
-  alignas(T) char _raw_storage[SZ * sizeof(T)];
-  ALWAYS_INLINE constexpr T *_data() noexcept {
-    return static_cast<T *>(static_cast<void *>(_raw_storage));
-  }
-  ALWAYS_INLINE constexpr const T *_data() const noexcept {
-    return static_cast<T *>(static_cast<void *>(_raw_storage));
-  }
+template<typename T>
+    requires std::is_trivially_destructible_v<T>
+class ring_buffer_base
+{
+    protected:
+    alignas(T) char _raw_storage[SZ * sizeof(T)];
+    ALWAYS_INLINE constexpr T* _data() noexcept
+    {
+        return static_cast<T*>(static_cast<void*>(_raw_storage));
+    }
+    ALWAYS_INLINE constexpr const T* _data() const noexcept
+    {
+        return static_cast<T*>(static_cast<void*>(_raw_storage));
+    }
 };
 // template <typename T> class ring_buffer_mt : public ring_buffer_base<T> {
 //   struct {
@@ -44,23 +47,30 @@ protected:
 //     return std::move(_data()[old_front]);
 //   }
 // };
-template <typename T> class ring_buffer : public ring_buffer_base<T> {
-  int _front = 0;
-  int _back = 0;
-  using ring_buffer_base<T>::_data;
+template<typename T>
+class ring_buffer : public ring_buffer_base<T>
+{
+    int _front = 0;
+    int _back  = 0;
+    using ring_buffer_base<T>::_data;
 
-public:
-  ALWAYS_INLINE constexpr void
-  push_back(T elem) noexcept(std::is_move_constructible_v<T>) {
-    new (_data() + _back) T{std::move(elem)};
-    _back = (_back + 1) % SZ;
-  }
-  ALWAYS_INLINE constexpr T &&pop_front() noexcept {
-    T &&r = std::move(_data()[_front]);
-    _front = (_front + 1) % SZ;
-    return std::move(r);
-  }
-  ALWAYS_INLINE constexpr bool empty() noexcept { return _front == _back; }
+    public:
+    ALWAYS_INLINE constexpr void
+    push_back(T elem) noexcept(std::is_move_constructible_v<T>)
+    {
+        new (_data() + _back) T{ std::move(elem) };
+        _back = (_back + 1) % SZ;
+    }
+    ALWAYS_INLINE constexpr T&& pop_front() noexcept
+    {
+        T&& r  = std::move(_data()[_front]);
+        _front = (_front + 1) % SZ;
+        return std::move(r);
+    }
+    ALWAYS_INLINE constexpr bool empty() noexcept
+    {
+        return _front == _back;
+    }
 };
 
 #endif
