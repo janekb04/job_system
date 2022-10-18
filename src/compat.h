@@ -21,9 +21,9 @@ namespace std
 #include <type_traits>
 #include <utility>
 
-#ifndef __cpp_lib_forward_like
 namespace std
 {
+#ifndef __cpp_lib_forward_like
     template<class T, class U>
     ALWAYS_INLINE [[nodiscard]] constexpr auto&& forward_like(U&& x) noexcept
     {
@@ -51,8 +51,10 @@ namespace std
             }
         }
     }
-    constexpr inline size_t hardware_destructive_interference_size = 64;
-} // namespace std
 #endif
+#ifndef __cpp_lib_hardware_interference_size
+    constexpr inline size_t hardware_destructive_interference_size = 64;
+#endif
+} // namespace std
 
 #endif

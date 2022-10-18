@@ -157,6 +157,7 @@ class basic_job
                                         std::index_sequence_for<Jobs...>{});
         }
         template<typename... Futures>
+            requires(!is_job<std::decay_t<Futures>> && ...)
         ALWAYS_INLINE auto await_transform(when_all_t<Futures&&...> futures)
         {
             return await_transform_impl(std::move(futures),
@@ -186,6 +187,7 @@ class basic_job
                 seq);
         }
         template<typename... Futures, size_t... I>
+            requires(!is_job<std::decay_t<Futures>> && ...)
         ALWAYS_INLINE auto await_transform_impl(when_all_t<Futures&&...> futures,
                                                 std::index_sequence<I...>)
         {
