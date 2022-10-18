@@ -74,7 +74,7 @@ class task
             return false;
         }
     }
-    [[gnu::noinline]] void signal_completion() noexcept
+    ALWAYS_INLINE void signal_completion() noexcept
     {
         _for_each_to_notify([](task& to_notify)
                             {
