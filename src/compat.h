@@ -14,7 +14,7 @@ namespace std
 #endif
 
 #if __clang_major__ == 14
-#    error "Clang 14 is not supported due to HALO (coroutine heap elision) bug"
+// #    error "Clang 14 is not supported due to HALO (coroutine heap elision) bug"
 #endif
 
 #include "assume.h"

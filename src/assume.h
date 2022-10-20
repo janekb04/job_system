@@ -26,5 +26,10 @@ const T& deatomize(const std::atomic<T>& a) noexcept
 {
     return *reinterpret_cast<const T*>(&a);
 }
+template<typename T>
+std::atomic<T>& atomize(T& a) noexcept
+{
+    return *reinterpret_cast<std::atomic<T>*>(&a);
+}
 
 #endif

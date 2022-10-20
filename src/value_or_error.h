@@ -9,7 +9,7 @@ class value_or_exception;
 template<>
 class value_or_exception<void, false>
 {
-    public:
+public:
     constexpr void get() noexcept
     {
     }
@@ -17,10 +17,10 @@ class value_or_exception<void, false>
 template<>
 class value_or_exception<void, true>
 {
-    private:
+private:
     std::exception_ptr exception;
 
-    public:
+public:
     value_or_exception() noexcept :
         exception{}
     {
@@ -41,7 +41,7 @@ class value_or_exception<void, true>
 template<typename T>
 class store_as_union
 {
-    protected:
+protected:
     union
     {
         T                  value;
@@ -49,7 +49,7 @@ class store_as_union
     };
     bool has_exception;
 
-    public:
+public:
     constexpr store_as_union() noexcept :
         has_exception{ false }
     {
@@ -58,11 +58,11 @@ class store_as_union
 template<typename T>
 class store_as_pair
 {
-    protected:
+protected:
     alignas(alignof(T)) char value[sizeof(T)];
     std::exception_ptr exception;
 
-    public:
+public:
     constexpr store_as_pair() noexcept :
         exception{}
     {
@@ -71,10 +71,10 @@ class store_as_pair
 template<typename T>
 class value_or_exception<T, false>
 {
-    private:
+private:
     alignas(alignof(T)) char data[sizeof(T)];
 
-    public:
+public:
     constexpr value_or_exception() noexcept
     {
     }
@@ -92,7 +92,7 @@ template<typename T>
     requires(sizeof(store_as_union<T>) < sizeof(store_as_pair<T>))
 class value_or_exception<T, true> : public store_as_union<T>
 {
-    public:
+public:
     constexpr value_or_exception() noexcept :
         store_as_union<T>{}
     {
@@ -121,7 +121,7 @@ class value_or_exception<T, true> : public store_as_union<T>
 template<typename T>
 class value_or_exception<T, true> : public store_as_pair<T>
 {
-    public:
+public:
     constexpr value_or_exception() noexcept :
         store_as_pair<T>{}
     {

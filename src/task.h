@@ -2,78 +2,63 @@
 #define TASK_H
 
 #include "assume.h"
-#include "scheduler_object.h"
 #include <atomic>
 #include <cstddef>
+#include "executor.h"
+#include "mpsc_list.h"
 
 class task;
 
-class notifiable
+class notifiable : public mpsc_list_node
 {
-    task*       _to_notify;
-    notifiable* _next;
+    task* _to_notify;
     ALWAYS_INLINE constexpr notifiable(task& t) noexcept
         :
-        _to_notify{ &t },
-        _next{ nullptr }
+        _to_notify{ &t }
     {
     }
     friend class task;
 };
 
-class task
+class task : protected mpsc_list<notifiable>
 {
-    std::atomic<size_t>      _sync              = 0;
-    std::atomic<notifiable*> _to_notify_head    = nullptr;
-    static constexpr size_t  COMPLETED_SENTINEL = 1;
+    std::atomic<size_t> _sync = 0;
 
-    private:
-    template<typename Func>
-    ALWAYS_INLINE constexpr void _for_each_to_notify(Func&& func) noexcept(
-        std::is_nothrow_invocable_v<Func, task&>)
+public:
+    ALWAYS_INLINE constexpr task(task&& other) :
+        mpsc_list<notifiable>{ std::move(other) },
+        _sync{ 0 } // the move ctor is called only when the task is already done
     {
-        notifiable* p = _to_notify_head.exchange(
-            reinterpret_cast<notifiable*>(COMPLETED_SENTINEL),
-            std::memory_order_acquire);
-        while (p) [[likely]]
-        {
-            task* to_notify = p->_to_notify;
-            p               = p->_next; // prefetch the next node from memory
-            func(*to_notify);
-        }
     }
-
-    public:
+    ALWAYS_INLINE constexpr task() noexcept = default;
     ALWAYS_INLINE constexpr notifiable get_notifiable() noexcept
     {
         return { *this };
     }
     ALWAYS_INLINE constexpr void reset_sync(size_t count) noexcept
     {
-        deatomize(_sync) = count;
+        deatomize(_sync) = count; // DEBUG: this is ok
     }
     ALWAYS_INLINE bool notify_on_completion(notifiable& to_append) noexcept
     {
-        notifiable* old_value = _to_notify_head.load(std::memory_order_relaxed);
-        do
+        if (this->try_enqueue(to_append))
         {
-            if (reinterpret_cast<size_t>(old_value) == COMPLETED_SENTINEL)
-            {
-                to_append._to_notify->_sync.fetch_sub(1, std::memory_order_relaxed);
-                return true;
-            }
-            to_append._next = old_value;
-        } while (!_to_notify_head.compare_exchange_weak(old_value, &to_append, std::memory_order_release));
-        return false;
+            return false;
+        }
+        else
+        {
+            to_append._to_notify->_sync.fetch_sub(1, std::memory_order_relaxed);
+            return true;
+        }
     }
     ALWAYS_INLINE void signal_completion() noexcept
     {
-        _for_each_to_notify([](task& to_notify)
-                            {
-      if (to_notify._sync.fetch_sub(1, std::memory_order_relaxed) == 1)
-          [[unlikely]] {
-        scheduler.add_ready_to_resume(to_notify);
-      } });
+        this->complete_and_iterate([](notifiable& n) noexcept
+                                   {
+                if(n._to_notify->_sync.fetch_sub(1, std::memory_order_relaxed) == 1) [[unlikely]]
+                {
+                    executor::instance().add_ready_to_resume(*n._to_notify);
+                } });
     }
 };
 
