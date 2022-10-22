@@ -4,6 +4,7 @@
 #include <atomic>
 
 #define ALWAYS_INLINE      [[gnu::always_inline]]
+#define NOINLINE           [[gnu::noinline]]
 #define ASSUME_UNREACHABLE __builtin_unreachable()
 #define ASSERT(...)                          \
     do                                       \
