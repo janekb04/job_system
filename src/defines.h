@@ -3,7 +3,7 @@
 
 #include <atomic>
 
-#define ALWAYS_INLINE      //[[gnu::always_inline]]
+#define ALWAYS_INLINE      [[gnu::always_inline]]
 #define ASSUME_UNREACHABLE __builtin_unreachable()
 #define ASSERT(...)                          \
     do                                       \

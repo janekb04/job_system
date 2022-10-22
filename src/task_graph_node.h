@@ -34,7 +34,7 @@ template<auto OnNotify>
 class task_graph_node : public task_graph_node<nullptr>
 {
     using notifier = task_graph_node_notifier<OnNotify>;
-    std::atomic<size_t> counter;
+    std::atomic<size_t> counter{ 0 };
     mpsc_list<notifier> list{};
 
 public:
