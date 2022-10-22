@@ -9,6 +9,7 @@
 #include <thread>
 #include <memory>
 #include <barrier>
+#include <type_traits>
 #include <vector>
 #include <functional>
 
@@ -16,24 +17,41 @@ class promise_base;
 
 class executor
 {
+#ifdef EXECUTOR_GLOBAL_QUEUE_SIZE
+    inline static constexpr size_t global_queue_size = EXECUTOR_GLOBAL_QUEUE_SIZE;
+#else
+    inline static constexpr size_t global_queue_size = 1024 * 1024;
+#endif
+    using global_queue_t = mpmc_queue<promise_base*, global_queue_size, cache_line_bytes - 1, CHAR_BIT - 1>;
+
 private:
     inline static std::unique_ptr<executor> instance;
     executor(size_t num_threads) :
         workers{ num_threads },
         queues{ num_threads },
-        global_queue{},
+        global_queue{ std::make_unique<global_queue_t>() },
         running{ false },
         should_terminate{ false },
-        batch_done{ false }
+        batch_done{ false },
+        ready_barrier{ int(num_threads + 1) },
+        ready_barrier2{ int(num_threads + 1) }
     {
         for (int i = 0; i < num_threads; ++i)
         {
-            workers[i] = std::thread{ worker::main_func(), i, std::ref(running), std::ref(should_terminate), std::ref(batch_done) };
+            workers[i] = std::thread{
+                worker::main_func(),
+                i,
+                std::ref(running),
+                std::ref(should_terminate),
+                std::ref(batch_done),
+                std::ref(ready_barrier),
+                std::ref(ready_barrier2)
+            };
         }
     }
     ALWAYS_INLINE static void reset() noexcept
     {
-        instance->global_queue.reset();
+        instance->global_queue->reset();
         for (auto& queue : instance->queues)
         {
             queue.reset();
@@ -47,9 +65,13 @@ public:
     }
     ALWAYS_INLINE static void run() noexcept
     {
+        instance->ready_barrier.arrive_and_wait();
         instance->running.store(true, memory_order_relaxed);
-        instance->running.notify_all();
         instance->batch_done.store(false, memory_order_relaxed);
+        instance->running.notify_all();
+        instance->global_queue->reset2();
+        std::atomic_thread_fence(memory_order_seq_cst);
+        instance->ready_barrier2.arrive_and_wait();
         instance->batch_done.wait(false);
         reset();
     }
@@ -59,9 +81,12 @@ public:
     }
     ALWAYS_INLINE static void destroy() noexcept
     {
+        instance->ready_barrier.arrive_and_wait();
         instance->running.store(true, memory_order_relaxed);
+        instance->batch_done.store(false, memory_order_relaxed);
         instance->running.notify_all();
         instance->should_terminate.store(true, memory_order_relaxed);
+        instance->ready_barrier2.arrive_and_wait();
         for (auto& worker : instance->workers)
         {
             worker.join();
@@ -76,12 +101,12 @@ public:
         {
             return worker::main_coroutine();
         }
-        auto result = std::coroutine_handle<promise_base>::from_promise(*instance->queues[worker::index()].dequeue(instance->global_queue));
+        auto result = instance->queues[worker::index()].dequeue(*instance->global_queue);
         if (!instance->running.load(memory_order_relaxed))
         {
             return worker::main_coroutine();
         }
-        return result;
+        return std::coroutine_handle<promise_base>::from_promise(*result);
     }
     ALWAYS_INLINE static void push(promise_base& p) noexcept
     {
@@ -89,16 +114,18 @@ public:
     }
     ALWAYS_INLINE static void publish() noexcept
     {
-        instance->queues[worker::index()].publish(instance->global_queue);
+        instance->queues[worker::index()].publish(*instance->global_queue);
     }
 
 private:
-    std::vector<std::thread>                                               workers;
-    std::vector<thread_local_queue_buffer<promise_base*>>                  queues;
-    mpmc_queue<promise_base*, 1 << 20, cache_line_bytes - 1, CHAR_BIT - 1> global_queue; // Control byte assumes little endian
-    std::atomic<bool>                                                      running;
-    std::atomic<bool>                                                      should_terminate;
-    std::atomic<bool>                                                      batch_done;
+    std::vector<std::thread>                              workers;
+    std::vector<thread_local_queue_buffer<promise_base*>> queues;
+    std::unique_ptr<global_queue_t>                       global_queue; // Control byte assumes little endian
+    std::atomic<bool>                                     running;
+    std::atomic<bool>                                     should_terminate;
+    std::atomic<bool>                                     batch_done;
+    std::barrier<>                                        ready_barrier;
+    std::barrier<>                                        ready_barrier2;
 };
 
 namespace detail::worker_coroutine

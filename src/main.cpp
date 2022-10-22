@@ -1,3 +1,5 @@
+#define EXECUTOR_GLOBAL_QUEUE_SIZE 1024 * 1024
+
 #include "executor.h"
 #include "job.h"
 #include "set_affinity.h"
@@ -8,6 +10,8 @@ static job<int, true> test_coro()
 {
     if constexpr (I == 0 || I == 1)
     {
+        if constexpr (Init)
+            executor::done();
         co_return 1;
     }
     else
@@ -19,16 +23,32 @@ static job<int, true> test_coro()
     }
 }
 
-int main()
+template<int I>
+static void test()
 {
-    set_this_process_priority_high();
-    executor::instantiate();
     int result;
     {
-        auto j = test_coro<23, true>();
+        auto j = test_coro<I, true>();
         executor::run();
         result = j.get_future().get();
     }
     std::cout << result << std::endl;
-    executor::destroy();
+}
+
+int main()
+{
+    set_this_process_priority_high();
+    // TODO: fix occasional spontaneous segfaults
+    for (int i = 1; i <= std::thread::hardware_concurrency(); ++i)
+    {
+        // Multiple calls to instantiate work
+        // Works with any number of worker threads
+        executor::instantiate(i);
+        // Multiple calls to run work
+        test<27>();
+        test<27>();
+        test<27>();
+        test<27>();
+        executor::destroy();
+    }
 }

@@ -18,8 +18,8 @@ class mpmc_queue
 
 private:
     alignas(cache_line_bytes) char data[sizeof(T) * SZ];
-    alignas(cache_line_bytes) std::atomic<size_t> reader;
-    alignas(cache_line_bytes) std::atomic<size_t> writer;
+    alignas(cache_line_bytes) std::atomic<size_t> reader{ 0 };
+    alignas(cache_line_bytes) std::atomic<size_t> writer{ 0 };
 
 public:
     ALWAYS_INLINE constexpr void enqueue(T* begin, size_t block_count) noexcept
@@ -58,6 +58,13 @@ public:
         }
         reader.store(0, memory_order_relaxed);
         writer.store(0, memory_order_relaxed);
+    }
+    ALWAYS_INLINE constexpr void reset2() noexcept
+    {
+        for (char* block_begin = data; block_begin < data + sizeof(data); block_begin += cache_line_bytes)
+        {
+            block_begin[ControlByte] = 0;
+        }
     }
 };
 
