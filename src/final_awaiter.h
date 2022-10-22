@@ -12,7 +12,7 @@ struct final_awaiter
     {
         return false;
     }
-    ALWAYS_INLINE void await_resume() const noexcept
+    ALWAYS_INLINE [[noreturn]] void await_resume() const noexcept
     {
         ASSUME_UNREACHABLE;
     }

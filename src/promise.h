@@ -43,7 +43,7 @@ public:
 
 private:
     [[no_unique_address]] value_or_exception<T, !Noexcept> return_value_storage;
-    friend class promise_return_helper<promise<T, Noexcept>, T>;
+    friend struct promise_return_helper<promise<T, Noexcept>, T>;
 };
 
 #endif
