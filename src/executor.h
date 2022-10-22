@@ -24,11 +24,19 @@ private:
         global_queue{},
         running{ false },
         should_terminate{ false },
-        barrier{ int(num_threads + 1) }
+        barrier{ 2 }
     {
         for (int i = 0; i < num_threads; ++i)
         {
             workers[i] = std::thread{ worker::main_func(), i, std::ref(barrier), std::ref(running), std::ref(should_terminate) };
+        }
+    }
+    ALWAYS_INLINE static void reset() noexcept
+    {
+        instance->global_queue.reset();
+        for (auto& queue : instance->queues)
+        {
+            queue.reset();
         }
     }
 
@@ -42,6 +50,7 @@ public:
         instance->running.store(true, memory_order_relaxed);
         instance->running.notify_all();
         instance->barrier.arrive_and_wait();
+        reset();
     }
     ALWAYS_INLINE static void done() noexcept
     {
@@ -62,14 +71,16 @@ public:
 public:
     ALWAYS_INLINE [[nodiscard]] static std::coroutine_handle<> pop() noexcept
     {
-        if (instance->running.load(memory_order_relaxed))
-        {
-            return std::coroutine_handle<promise_base>::from_promise(*instance->queues[worker::index()].dequeue(instance->global_queue));
-        }
-        else
+        if (!instance->running.load(memory_order_relaxed))
         {
             return worker::main_coroutine();
         }
+        auto result = std::coroutine_handle<promise_base>::from_promise(*instance->queues[worker::index()].dequeue(instance->global_queue));
+        if (!instance->running.load(memory_order_relaxed))
+        {
+            return worker::main_coroutine();
+        }
+        return result;
     }
     ALWAYS_INLINE static void push(promise_base& p) noexcept
     {

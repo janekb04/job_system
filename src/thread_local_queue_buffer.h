@@ -46,6 +46,11 @@ public:
     {
         return begin == end;
     }
+    ALWAYS_INLINE constexpr void reset() noexcept
+    {
+        begin = 0;
+        end   = 0;
+    }
 
 private:
     uint8_t begin;

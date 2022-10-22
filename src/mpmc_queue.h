@@ -50,6 +50,15 @@ public:
         }
         return std::assume_aligned<cache_line_bytes>(reinterpret_cast<T*>(begin));
     }
+    ALWAYS_INLINE constexpr void reset() noexcept
+    {
+        for (char* block_begin = data; block_begin < data + sizeof(data); block_begin += cache_line_bytes)
+        {
+            block_begin[ControlByte] |= (1ull << ControlBit);
+        }
+        reader.store(0, memory_order_relaxed);
+        writer.store(0, memory_order_relaxed);
+    }
 };
 
 #endif

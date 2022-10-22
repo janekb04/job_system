@@ -20,7 +20,7 @@ static job<int, true> test_coro()
 
 int main()
 {
-    executor::instantiate(2);
+    executor::instantiate(1);
     int result;
     {
         auto j = test_coro<23, true>();
