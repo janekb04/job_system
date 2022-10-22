@@ -1,7 +1,7 @@
 #ifndef MPSC_LIST_H
 #define MPSC_LIST_H
 
-#include "assume.h"
+#include "defines.h"
 #include <atomic>
 #include <concepts>
 
@@ -36,10 +36,11 @@ public:
         T* old_head = head.load(std::memory_order_relaxed);
         do
         {
-            if (reinterpret_cast<size_t>(old_head) == COMPLETED_SENTINEL) [[unlikely]]
-            {
-                return false;
-            }
+            if (reinterpret_cast<size_t>(old_head) == COMPLETED_SENTINEL)
+                UNLIKELY
+                {
+                    return false;
+                }
             to_append._next = old_head;
         } while (!head.compare_exchange_weak(old_head, &to_append, std::memory_order_release, std::memory_order_relaxed));
         return true;
@@ -49,14 +50,15 @@ public:
     void complete_and_iterate(Func&& func) noexcept(std::is_nothrow_invocable_v<Func, T&>)
     {
         T* p = head.exchange(reinterpret_cast<T*>(COMPLETED_SENTINEL), std::memory_order_acquire);
-        while (p) [[likely]]
-        {
-            T* cur  = p;
-            T* next = static_cast<T*>(p->_next);
-            // p->_next = reinterpret_cast<T*>(COMPLETED_SENTINEL); // DEBUG
-            p = next;
-            func(*cur);
-        }
+        while (p)
+            LIKELY
+            {
+                T* cur  = p;
+                T* next = static_cast<T*>(p->_next);
+                // p->_next = reinterpret_cast<T*>(COMPLETED_SENTINEL); // DEBUG
+                p = next;
+                func(*cur);
+            }
     }
 };
 

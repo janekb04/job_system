@@ -1,5 +1,5 @@
-#ifndef COMPAT_H
-#define COMPAT_H
+#ifndef STD_COMPATIBILITY_H
+#define STD_COMPATIBILITY_H
 
 #if __has_include(<coroutine>)
 #    include <coroutine>
@@ -13,17 +13,14 @@ namespace std
 #    error "No coroutine header found"
 #endif
 
-#if __clang_major__ == 14
-// #    error "Clang 14 is not supported due to HALO (coroutine heap elision) bug"
-#endif
-
-#include "assume.h"
+#include "defines.h"
 #include <type_traits>
 #include <utility>
 
 namespace std
 {
 #ifndef __cpp_lib_forward_like
+    // sample implementation from cppreference.com
     template<class T, class U>
     ALWAYS_INLINE [[nodiscard]] constexpr auto&& forward_like(U&& x) noexcept
     {
@@ -53,7 +50,13 @@ namespace std
     }
 #endif
 #ifndef __cpp_lib_hardware_interference_size
-    constexpr inline size_t hardware_destructive_interference_size = 64;
+#    if defined(__arm__) && __APPLE__ // M-series ARM CPU
+    constexpr inline size_t hardware_constructive_interference_size = 128;
+    constexpr inline size_t hardware_destructive_interference_size  = 128;
+#    else // other ARM CPUs and x86
+    constexpr inline size_t hardware_constructive_interference_size = 64;
+    constexpr inline size_t hardware_destructive_interference_size  = 64;
+#    endif
 #endif
 } // namespace std
 

@@ -1,9 +1,8 @@
 find_package(Threads REQUIRED)
 add_executable(test main.cpp set_affinity.cpp)
 target_compile_features(test PRIVATE cxx_std_20)
-target_compile_options(test PRIVATE -fcoroutines-ts) # -fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer) # -fno-inline)
-
-# target_link_options(test PRIVATE -fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer)
+target_compile_options(test PRIVATE -fcoroutines-ts -fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer -fno-inline)
+target_link_options(test PRIVATE -fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer -fno-inline)
 target_link_libraries(test PRIVATE Threads::Threads)
 
 add_executable(mpsc_queue_test mpsc_queue_test.cpp)

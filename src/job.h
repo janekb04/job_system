@@ -1,334 +1,44 @@
 #ifndef JOB_H
 #define JOB_H
 
-#include <exception>
-#include <future>
-#include <tuple>
+#include "defines.h"
+#include "std_compatibility.h"
+#include "promise.h"
+#include "future.h"
+#include "when_all.h"
+#include "misc_utilities.h"
 
-#include "assume.h"
-#include "compat.h"
-#include "task.h"
-#include "value_or_error.h"
-#include "executor.h"
-
-template<typename T, bool Noexcept, size_t LocalHeapSize>
-class basic_job;
-
-template<typename Job>
-using future_of = typename Job::future;
-
-template<typename T>
-struct is_job_impl
-{
-    static constexpr bool value = false;
-};
-template<typename T, bool Noexcept, size_t LocalHeapSize>
-struct is_job_impl<basic_job<T, Noexcept, LocalHeapSize>>
-{
-    static constexpr bool value = true;
-};
-template<typename T>
-concept is_job = is_job_impl<T>::value;
-
-template<typename... Jobs>
-struct when_all_t : std::tuple<Jobs&&...>
-{
-    ALWAYS_INLINE constexpr when_all_t(Jobs&&... jobs) noexcept
-        :
-        std::tuple<Jobs&&...>{ std::forward<Jobs>(jobs)... }
-    {
-    }
-};
-template<typename... Jobs>
-ALWAYS_INLINE constexpr when_all_t<Jobs&&...>
-when_all(Jobs&&... jobs) noexcept
-{
-    return { std::forward<Jobs>(jobs)... };
-}
-struct get_notifiable_for_this_job_tag_t
-{
-};
-ALWAYS_INLINE constexpr get_notifiable_for_this_job_tag_t
-get_notifiable_for_this_job() noexcept
-{
-    return {};
-}
-template<typename Promise, typename T>
-struct promise_return_helper_t
-{
-    template<typename U>
-    ALWAYS_INLINE constexpr void return_value(U&& val) noexcept(noexcept(
-        static_cast<Promise*>(this)->_return_value_impl(std::move(val))))
-    {
-        static_cast<Promise*>(this)->_return_value_impl(std::move(val));
-    }
-};
-template<typename Promise>
-struct promise_return_helper_t<Promise, void>
-{
-    ALWAYS_INLINE constexpr void return_void() const noexcept
-    {
-    }
-};
-template<size_t I, typename T>
-ALWAYS_INLINE constexpr decltype(auto) unpack_forward(T&& t) noexcept
-{
-    return std::forward<T>(t);
-}
-
-template<typename T, bool Noexcept, size_t LocalHeapSize>
-class basic_job
+template<typename T, bool Noexcept>
+class job
 {
 public:
-    class promise;
-    using handle       = std::coroutine_handle<promise>;
-    using promise_type = promise;
-    class promise : public task, public promise_return_helper_t<promise, T>
+    using promise_type = promise<T, Noexcept>;
+    using future_type  = future<T, Noexcept>;
+
+    ALWAYS_INLINE constexpr job(promise_type& p) noexcept :
+        h{ std::coroutine_handle<promise_type>::from_promise(p) }
     {
-    public: // promise_type interface
-        promise()               = default;
-        promise(const promise&) = delete;
-        promise(promise&&)      = delete;
-        ALWAYS_INLINE basic_job get_return_object() noexcept
-        {
-            return { handle::from_promise(*this) };
-        }
-        ALWAYS_INLINE constexpr auto initial_suspend() const noexcept
-        {
-            struct awaiter
-            {
-                ALWAYS_INLINE constexpr bool await_ready() const noexcept
-                {
-                    return false;
-                }
-                ALWAYS_INLINE constexpr void await_resume() const noexcept
-                {
-                }
-                ALWAYS_INLINE void await_suspend(handle h) const
-                {
-                    auto& p = h.promise();
-                    executor::instance().add_ready_to_launch(p);
-                }
-            };
-            return awaiter{};
-        }
-        ALWAYS_INLINE constexpr auto final_suspend() noexcept
-        {
-            struct awaiter
-            {
-                ALWAYS_INLINE constexpr bool await_ready() const noexcept
-                {
-                    return false;
-                }
-                ALWAYS_INLINE constexpr void await_resume() const noexcept
-                {
-                }
-                ALWAYS_INLINE std::coroutine_handle<> await_suspend(std::coroutine_handle<promise> h) noexcept
-                {
-                    task t = std::move(static_cast<task&>(h.promise()));
-                    t.signal_completion();
-                    return executor::instance().get_next_task();
-                }
-            };
-
-            return awaiter{};
-        };
-
-        ALWAYS_INLINE constexpr auto
-        await_transform(get_notifiable_for_this_job_tag_t) const noexcept
-        {
-            struct awaiter
-            {
-                ALWAYS_INLINE constexpr bool await_ready() const noexcept
-                {
-                    return true;
-                }
-                ALWAYS_INLINE constexpr notifiable await_resume() const noexcept
-                {
-                    return p._get_notifiable();
-                }
-                ALWAYS_INLINE [[noreturn]] constexpr void
-                await_suspend(handle) const noexcept
-                {
-                    ASSUME_UNREACHABLE;
-                }
-                promise& p;
-            };
-            return awaiter{ *this };
-        }
-
-        template<typename Job>
-            requires is_job<std::decay_t<Job>>
-        ALWAYS_INLINE decltype(auto) await_transform(Job&& j) noexcept
-        {
-            return await_transform(when_all(std::forward<Job>(j)));
-        }
-        template<typename Future>
-        ALWAYS_INLINE decltype(auto) await_transform(Future&& f) noexcept
-        {
-            return await_transform(when_all(std::forward<Future>(f)));
-        }
-
-        template<typename... Jobs>
-            requires(is_job<std::decay_t<Jobs>> && ...)
-        ALWAYS_INLINE decltype(auto) await_transform(when_all_t<Jobs&&...> jobs) noexcept
-        {
-            return await_transform_impl(std::move(jobs),
-                                        std::index_sequence_for<Jobs...>{});
-        }
-        template<typename... Futures>
-            requires(!is_job<std::decay_t<Futures>> && ...)
-        ALWAYS_INLINE decltype(auto) await_transform(when_all_t<Futures&&...> futures) noexcept
-        {
-            return await_transform_impl(std::move(futures),
-                                        std::index_sequence_for<Futures...>{});
-        }
-
-        ALWAYS_INLINE void unhandled_exception() noexcept
-        {
-            if constexpr (Noexcept)
-            {
-                ASSUME_UNREACHABLE;
-            }
-            else
-            {
-                _return_value_storage.set_exception(std::current_exception());
-            }
-        };
-
-    private:
-        template<typename... Jobs, size_t... I>
-            requires(is_job<std::decay_t<Jobs>> && ...)
-        ALWAYS_INLINE decltype(auto) await_transform_impl(when_all_t<Jobs&&...>     jobs,
-                                                          std::index_sequence<I...> seq)
-        {
-            return await_transform_impl(
-                when_all(std::forward_like<Jobs>(std::get<I>(jobs).get_future())...),
-                seq);
-        }
-        template<typename... Futures, size_t... I>
-            requires(!is_job<std::decay_t<Futures>> && ...)
-        ALWAYS_INLINE decltype(auto) await_transform_impl(when_all_t<Futures&&...> futures,
-                                                          std::index_sequence<I...>)
-        {
-            struct awaiter
-            {
-                ALWAYS_INLINE awaiter(promise& p, when_all_t<Futures&&...> futures) :
-                    ns{ unpack_forward<I>(p.get_notifiable())... },
-                    fs{ futures }
-                {
-                }
-                ALWAYS_INLINE constexpr bool await_ready() noexcept
-                {
-                    int  dependencies_already_done = (static_cast<int>(std::get<I>(fs).notify_on_job_completion(ns[I])) + ...);
-                    bool ready                     = false;
-                    if (dependencies_already_done == sizeof...(Futures)) [[unlikely]]
-                    {
-                        // current job wasn't added to the scheduler, we must not suspend
-                        ready = true;
-                    }
-                    return ready;
-                }
-                ALWAYS_INLINE constexpr decltype(auto) await_resume() const noexcept
-                {
-                    if constexpr (sizeof...(Futures) == 1)
-                    {
-                        return (std::forward_like<Futures>(std::get<0>(fs).get()), ...);
-                    }
-                    else
-                    {
-                        return std::tuple{
-                            std::forward_like<Futures>(std::get<I>(fs).get())...
-                        };
-                    }
-                }
-                ALWAYS_INLINE std::coroutine_handle<> await_suspend(handle)
-                {
-                    return executor::instance().get_next_task();
-                }
-                notifiable             ns[sizeof...(Futures)];
-                std::tuple<Futures...> fs;
-            };
-
-            reset_sync(sizeof...(Futures));
-            return awaiter{ *this, std::move(futures) };
-        }
-
-    public: // interface to future
-        ALWAYS_INLINE std::add_lvalue_reference_t<T>
-                      get_return_value() noexcept(noexcept(_return_value_storage.get()))
-        {
-            return _return_value_storage.get();
-        }
-        ALWAYS_INLINE bool notify_on_job_completion(notifiable& n)
-        {
-            return notify_on_completion(n);
-        }
-
-    private: // interface to promise_return_helper_t
-        template<typename U>
-        ALWAYS_INLINE void _return_value_impl(U&& val) noexcept(
-            noexcept(_return_value_storage.set_value(std::move(val))))
-        {
-            _return_value_storage.set_value(std::move(val));
-        }
-        friend class promise_return_helper_t<promise, T>;
-
-    private:
-        friend class notifiable;
-
-    private:
-        [[no_unique_address]] value_or_exception<T, !Noexcept>
-            _return_value_storage;
-    };
-    class future
-    {
-    public:
-        ALWAYS_INLINE constexpr future(promise& p) noexcept :
-            _p{ p }
-        {
-        }
-        ALWAYS_INLINE constexpr T& get() const noexcept(Noexcept)
-        {
-            return _p.get_return_value();
-        }
-        ALWAYS_INLINE bool notify_on_job_completion(notifiable& n) const noexcept
-        {
-            return _p.notify_on_job_completion(n);
-        }
-
-    private:
-        promise& _p;
-    };
-
-public:
-    ALWAYS_INLINE future get_future() const noexcept
-    {
-        return future{ _h.promise() };
     }
-    ALWAYS_INLINE constexpr ~basic_job()
+
+    ALWAYS_INLINE constexpr ~job() noexcept
     {
-        if (_h) [[likely]]
-        {
-            // if (!_h.done())
-            // {
-            //     std::terminate(); // DEBUG
-            // }
-            _h.destroy();
-        }
+        ASSERT(h && h.done());
+        h.destroy();
+    }
+
+    ALWAYS_INLINE [[nodiscard]] constexpr future<T, Noexcept> get_future() const noexcept
+    {
+        return h.promise();
+    }
+
+    ALWAYS_INLINE [[nodiscard]] friend constexpr auto operator co_await(auto&& self) noexcept
+        requires std::same_as<std::remove_cvref_t<decltype(self)>, job<T, Noexcept>>
+    {
+        return when_all(std::forward<decltype(self)>(self));
     }
 
 private:
-    ALWAYS_INLINE constexpr basic_job(handle h) noexcept :
-        _h{ std::move(h) }
-    {
-    }
-
-private:
-    handle _h;
+    std::coroutine_handle<promise_type> h;
 };
-
-template<typename T>
-using job = basic_job<T, true, 0>;
 
 #endif
