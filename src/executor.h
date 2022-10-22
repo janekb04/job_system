@@ -6,6 +6,7 @@
 #include "thread_local_queue_buffer.h"
 #include "defines.h"
 #include "worker.h"
+#include <chrono>
 #include <thread>
 #include <memory>
 #include <barrier>
@@ -72,12 +73,14 @@ public:
         instance->global_queue->reset2();
         std::atomic_thread_fence(memory_order_seq_cst);
         instance->ready_barrier2.arrive_and_wait();
+        instance->begin_time = std::chrono::high_resolution_clock::now();
         instance->batch_done.wait(false);
         reset();
     }
     ALWAYS_INLINE static void done() noexcept
     {
         instance->running.store(false, memory_order_relaxed);
+        instance->time = std::chrono::high_resolution_clock::now() - instance->begin_time;
     }
     ALWAYS_INLINE static void destroy() noexcept
     {
@@ -92,6 +95,10 @@ public:
             worker.join();
         }
         instance.reset();
+    }
+    ALWAYS_INLINE static auto get_time() noexcept
+    {
+        return instance->time;
     }
 
 public:
@@ -126,6 +133,8 @@ private:
     std::atomic<bool>                                     batch_done;
     std::barrier<>                                        ready_barrier;
     std::barrier<>                                        ready_barrier2;
+    std::chrono::high_resolution_clock::time_point        begin_time;
+    std::chrono::high_resolution_clock::duration          time;
 };
 
 namespace detail::worker_coroutine
