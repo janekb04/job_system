@@ -23,7 +23,22 @@ public:
         if (empty())
         {
             T* block = fallback.dequeue(1);
-            std::memcpy(data + end, block, cache_line_bytes);
+
+            char*  src     = reinterpret_cast<char*>(block);
+            char*  dst     = reinterpret_cast<char*>(data + end);
+            char*  dst_end = std::min(dst + cache_line_bytes, reinterpret_cast<char*>(data + size));
+            size_t sz1     = dst_end - dst;
+            std::memcpy(dst, src, sz1);
+
+            src += sz1;
+            dst        = reinterpret_cast<char*>(data);
+            dst_end    = reinterpret_cast<char*>(data) + (cache_line_bytes - sz1);
+            size_t sz2 = dst_end - dst;
+            if (sz2 > 0)
+            {
+                std::memcpy(dst, src, sz2);
+            }
+
             end += elems_per_block;
         }
         --end;
@@ -32,15 +47,44 @@ public:
     template<typename MPMCQueue>
     ALWAYS_INLINE constexpr void publish(MPMCQueue& target) noexcept
     {
-        const uint8_t count        = (end - begin);
-        const uint8_t count_blocks = count / elems_per_block;
-        if (count_blocks == 0)
+        char* src = reinterpret_cast<char*>(data + begin);
+        char* src_end;
+        if (end < begin)
+        {
+            src_end = reinterpret_cast<char*>(data + size);
+        }
+        else
+        {
+            src_end = reinterpret_cast<char*>(data + end);
+        }
+
+        size_t sz = src_end - src;
+        sz -= sz % cache_line_bytes;
+
+        size_t block_count = sz / cache_line_bytes;
+
+        if (block_count > 0)
+        {
+            target.enqueue(reinterpret_cast<T*>(src), block_count);
+            begin += block_count * elems_per_block;
+        }
+
+        if (end < begin)
         {
             return;
         }
-        const uint8_t new_begin = begin + count - count % elems_per_block;
-        target.enqueue(data + begin, count_blocks);
-        begin = new_begin;
+
+        src     = reinterpret_cast<char*>(data + begin);
+        src_end = reinterpret_cast<char*>(data + end);
+        sz      = src_end - src;
+        sz -= sz % cache_line_bytes;
+        block_count = sz / cache_line_bytes;
+
+        if (block_count > 0)
+        {
+            target.enqueue(reinterpret_cast<T*>(src), block_count);
+            begin += block_count * elems_per_block;
+        }
     }
     ALWAYS_INLINE [[nodiscard]] constexpr bool empty() const noexcept
     {
