@@ -23,7 +23,7 @@ public:
     }
     ALWAYS_INLINE [[nodiscard]] constexpr static auto main_func() noexcept
     {
-        return [](int index, std::reference_wrapper<std::barrier<>> barrier, std::reference_wrapper<std::atomic<bool>> running, std::reference_wrapper<std::atomic<bool>> should_terminate)
+        return [](int index, std::reference_wrapper<std::atomic<bool>> running, std::reference_wrapper<std::atomic<bool>> should_terminate, std::reference_wrapper<std::atomic<bool>> batch_done)
         {
             while (true)
             {
@@ -37,7 +37,8 @@ public:
                 {
                     co_return;
                 }();
-                barrier.get().arrive_and_wait();
+                batch_done.get().store(true, memory_order_relaxed);
+                batch_done.get().notify_all();
             }
         };
     }

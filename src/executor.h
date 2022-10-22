@@ -24,11 +24,11 @@ private:
         global_queue{},
         running{ false },
         should_terminate{ false },
-        barrier{ 2 }
+        batch_done{ false }
     {
         for (int i = 0; i < num_threads; ++i)
         {
-            workers[i] = std::thread{ worker::main_func(), i, std::ref(barrier), std::ref(running), std::ref(should_terminate) };
+            workers[i] = std::thread{ worker::main_func(), i, std::ref(running), std::ref(should_terminate), std::ref(batch_done) };
         }
     }
     ALWAYS_INLINE static void reset() noexcept
@@ -49,7 +49,8 @@ public:
     {
         instance->running.store(true, memory_order_relaxed);
         instance->running.notify_all();
-        instance->barrier.arrive_and_wait();
+        instance->batch_done.store(false, memory_order_relaxed);
+        instance->batch_done.wait(false);
         reset();
     }
     ALWAYS_INLINE static void done() noexcept
@@ -97,7 +98,7 @@ private:
     mpmc_queue<promise_base*, 1 << 20, cache_line_bytes - 1, CHAR_BIT - 1> global_queue; // Control byte assumes little endian
     std::atomic<bool>                                                      running;
     std::atomic<bool>                                                      should_terminate;
-    std::barrier<>                                                         barrier;
+    std::atomic<bool>                                                      batch_done;
 };
 
 namespace detail::worker_coroutine
