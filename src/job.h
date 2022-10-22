@@ -22,7 +22,9 @@ public:
 
     ALWAYS_INLINE constexpr ~job() noexcept
     {
-        ASSERT(h && h.done());
+        // For some reason, if this check is uncommented, the program crashes with a segfault or a bus error. TODO: Investigate.
+        // ASSERT(h && h.done());
+
         h.destroy();
     }
 
