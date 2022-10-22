@@ -28,7 +28,10 @@ public:
             char*  dst     = reinterpret_cast<char*>(data + end);
             char*  dst_end = std::min(dst + cache_line_bytes, reinterpret_cast<char*>(data + size));
             size_t sz1     = dst_end - dst;
-            std::memcpy(dst, src, sz1);
+            if (sz1 > 0)
+            {
+                std::memcpy(dst, src, sz1);
+            }
 
             src += sz1;
             dst        = reinterpret_cast<char*>(data);
