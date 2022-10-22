@@ -3,6 +3,7 @@
 
 #include "defines.h"
 #include "std_compatibility.h"
+#include "set_affinity.h"
 #include "worker_coroutine.h"
 #include <barrier>
 
@@ -25,6 +26,8 @@ public:
     {
         return [](int index, std::reference_wrapper<std::atomic<bool>> running, std::reference_wrapper<std::atomic<bool>> should_terminate, std::reference_wrapper<std::atomic<bool>> batch_done)
         {
+            thread_index = index;
+            set_this_thread_affinity(index);
             while (true)
             {
                 running.get().wait(false, memory_order_relaxed);
@@ -32,7 +35,6 @@ public:
                 {
                     return;
                 }
-                thread_index = index;
                 []() -> worker_coroutine_return_object
                 {
                     co_return;

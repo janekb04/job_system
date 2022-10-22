@@ -1,5 +1,6 @@
 #include "executor.h"
 #include "job.h"
+#include "set_affinity.h"
 #include <iostream>
 
 template<int I, bool Init = false>
@@ -20,6 +21,7 @@ static job<int, true> test_coro()
 
 int main()
 {
+    set_this_process_priority_high();
     executor::instantiate();
     int result;
     {
