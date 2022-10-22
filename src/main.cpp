@@ -3,6 +3,7 @@
 #include "executor.h"
 #include "job.h"
 #include "set_affinity.h"
+#include <chrono>
 #include <iostream>
 
 template<int I, bool Init = false>
@@ -24,6 +25,21 @@ static job<int, true> test_coro()
 }
 
 template<int I>
+NOINLINE int test_normal(int& invocations)
+{
+    ++invocations;
+    if constexpr (I == 0 || I == 1)
+    {
+        return 1;
+    }
+    else
+    {
+        int result = test_normal<I - 1>(invocations) + test_normal<I - 2>(invocations);
+        return result;
+    }
+}
+
+template<int I>
 static void test()
 {
     int result;
@@ -32,7 +48,19 @@ static void test()
         executor::run();
         result = j.get_future().get();
     }
-    std::cout << result << std::endl;
+    std::cout << "    fib(" << I << ") = " << result << " in: ";
+    std::cout << "coro[" << executor::get_time().count() / 1e6 << "ms], ";
+    {
+        auto start       = std::chrono::high_resolution_clock::now();
+        int  invocations = 0;
+        auto result2     = test_normal<I>(invocations);
+        if (result != result2)
+            std::cerr << "Result mismatch: " << result << " != " << result2 << std::endl;
+        auto end  = std::chrono::high_resolution_clock::now();
+        auto time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+        std::cout << "normal[" << time.count() / 1e6 << "ms], ";
+        std::cout << "overhead per invocation = " << time.count() / float(invocations) << "ns\n";
+    }
 }
 
 int main()
@@ -41,10 +69,15 @@ int main()
     // TODO: fix occasional spontaneous segfaults
     for (int i = 1; i <= std::thread::hardware_concurrency(); ++i)
     {
+        std::cout << "Testing with " << i << " threads:\n";
         // Multiple calls to instantiate work
         // Works with any number of worker threads
         executor::instantiate(i);
         // Multiple calls to run work
+        test<10>();
+        test<10>();
+        test<10>();
+        test<10>();
         test<27>();
         test<27>();
         test<27>();
