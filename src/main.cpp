@@ -49,7 +49,8 @@ static void test()
         result = j.get_future().get();
     }
     std::cout << "    fib(" << I << ") = " << result << " in: ";
-    std::cout << "coro[" << executor::get_time().count() / 1e6 << "ms], ";
+    auto coro_time = executor::get_time();
+    std::cout << "coro[" << coro_time.count() / 1e6 << "ms], ";
     {
         auto start       = std::chrono::high_resolution_clock::now();
         int  invocations = 0;
@@ -59,7 +60,7 @@ static void test()
         auto end  = std::chrono::high_resolution_clock::now();
         auto time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
         std::cout << "normal[" << time.count() / 1e6 << "ms], ";
-        std::cout << "overhead per invocation = " << time.count() / float(invocations) << "ns\n";
+        std::cout << "overhead per invocation = " << (coro_time - time).count() / float(invocations) << "ns\n";
     }
 }
 
@@ -78,6 +79,12 @@ int main()
         test<10>();
         test<10>();
         test<10>();
+        test<10>();
+        test<10>();
+        test<10>();
+        test<27>();
+        test<27>();
+        test<27>();
         test<27>();
         test<27>();
         test<27>();
