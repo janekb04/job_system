@@ -55,16 +55,16 @@ public:
     }
 
 private:
-    friend constexpr void detail::worker_coroutine::set_worker_main_coroutine(std::coroutine_handle<worker_coroutine_promise_type> h) noexcept;
+    friend constexpr void detail::worker_coroutine::set_worker_main_coroutine(std::coroutine_handle<worker_coroutine_promise_type> h) NOEXCEPT;
 };
 
 namespace detail::worker_coroutine
 {
-    ALWAYS_INLINE constexpr void set_worker_main_coroutine(std::coroutine_handle<worker_coroutine_promise_type> h) noexcept
+    ALWAYS_INLINE constexpr void set_worker_main_coroutine(std::coroutine_handle<worker_coroutine_promise_type> h) NOEXCEPT
     {
         worker::main_coro = h;
     }
-    ALWAYS_INLINE static std::coroutine_handle<> executor_pop() noexcept;
+    ALWAYS_INLINE static std::coroutine_handle<> executor_pop() NOEXCEPT;
 } // namespace detail::worker_coroutine
 
 #endif

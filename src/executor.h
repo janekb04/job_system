@@ -139,7 +139,7 @@ private:
 
 namespace detail::worker_coroutine
 {
-    ALWAYS_INLINE static std::coroutine_handle<> executor_pop() noexcept
+    ALWAYS_INLINE static std::coroutine_handle<> executor_pop() NOEXCEPT
     {
         return executor::pop();
     }
