@@ -28,7 +28,7 @@ public:
         return [](int                                       index,
                   std::reference_wrapper<std::atomic<bool>> running,
                   std::reference_wrapper<std::atomic<bool>> should_terminate,
-                  std::reference_wrapper<std::atomic<bool>> batch_done,
+                  std::reference_wrapper<std::atomic<int>>  batch_done,
                   std::reference_wrapper<std::barrier<>>    ready_barrier,
                   std::reference_wrapper<std::barrier<>>    ready_barrier2)
         {
@@ -48,7 +48,7 @@ public:
                 {
                     co_return;
                 }();
-                batch_done.get().store(true, memory_order_relaxed);
+                batch_done.get().fetch_sub(1, memory_order_relaxed);
                 batch_done.get().notify_all();
             }
         };

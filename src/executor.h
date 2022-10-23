@@ -33,7 +33,7 @@ private:
         global_queue{ std::make_unique<global_queue_t>() },
         running{ false },
         should_terminate{ false },
-        batch_done{ false },
+        batch_done{ -1 },
         ready_barrier{ int(num_threads + 1) },
         ready_barrier2{ int(num_threads + 1) }
     {
@@ -68,14 +68,19 @@ public:
     {
         instance->ready_barrier.arrive_and_wait();
         instance->running.store(true, memory_order_relaxed);
-        instance->batch_done.store(false, memory_order_relaxed);
+        instance->batch_done.store(instance->workers.size(), memory_order_relaxed);
         instance->running.notify_all();
         instance->global_queue->reset2();
         std::atomic_thread_fence(memory_order_seq_cst);
         instance->ready_barrier2.arrive_and_wait();
         instance->begin_time = std::chrono::high_resolution_clock::now();
-        instance->batch_done.wait(false);
+
+        instance->batch_done.wait(instance->workers.size(), memory_order_relaxed);
         reset();
+        for (int i = instance->workers.size() - 1; i >= 1; --i)
+        {
+            instance->batch_done.wait(i, memory_order_relaxed);
+        }
     }
     ALWAYS_INLINE static void done() noexcept
     {
@@ -86,7 +91,7 @@ public:
     {
         instance->ready_barrier.arrive_and_wait();
         instance->running.store(true, memory_order_relaxed);
-        instance->batch_done.store(false, memory_order_relaxed);
+        instance->batch_done.store(-1, memory_order_relaxed);
         instance->running.notify_all();
         instance->should_terminate.store(true, memory_order_relaxed);
         instance->ready_barrier2.arrive_and_wait();
@@ -130,7 +135,7 @@ private:
     std::unique_ptr<global_queue_t>                       global_queue; // Control byte assumes little endian
     std::atomic<bool>                                     running;
     std::atomic<bool>                                     should_terminate;
-    std::atomic<bool>                                     batch_done;
+    std::atomic<int>                                      batch_done;
     std::barrier<>                                        ready_barrier;
     std::barrier<>                                        ready_barrier2;
     std::chrono::high_resolution_clock::time_point        begin_time;

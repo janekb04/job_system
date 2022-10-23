@@ -57,9 +57,8 @@ static void test()
         auto result2     = test_normal<I>(invocations);
         if (result != result2)
         {
-            // There is something really wrong with either the compiler or the M1 CPU
-            // For some reason, uncommenting this line, causes std::terminate().
-            // Even if the if condition never evaluates to true.
+            // I know: it must be the call to test_normal
+            // removing std::cout makes it eliminated
 
             // std::cout << "Result mismatch: " << result << " != " << result2 << std::endl;
         }
