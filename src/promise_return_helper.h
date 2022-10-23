@@ -16,7 +16,7 @@ struct promise_return_helper
 template<typename Promise>
 struct promise_return_helper<Promise, void>
 {
-    ALWAYS_INLINE constexpr void return_void() const noexcept
+    ALWAYS_INLINE constexpr void return_void() const NOEXCEPT
     {
     }
 };

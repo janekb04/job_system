@@ -16,11 +16,11 @@ template<typename T, bool Noexcept>
 class promise : public promise_base, public promise_return_helper<promise<T, Noexcept>, T>
 {
 public:
-    ALWAYS_INLINE [[nodiscard]] constexpr job<T, Noexcept> get_return_object() noexcept
+    ALWAYS_INLINE [[nodiscard]] constexpr job<T, Noexcept> get_return_object() NOEXCEPT
     {
         return *this;
     }
-    ALWAYS_INLINE [[nodiscard]] constexpr initial_awaiter initial_suspend() noexcept
+    ALWAYS_INLINE [[nodiscard]] constexpr initial_awaiter initial_suspend() NOEXCEPT
     {
         return {};
     }
@@ -33,7 +33,7 @@ public:
         return return_value_storage.get();
     }
 
-    ALWAYS_INLINE constexpr void unhandled_exception() noexcept
+    ALWAYS_INLINE constexpr void unhandled_exception() NOEXCEPT
     {
         if constexpr (Noexcept)
             ASSUME_UNREACHABLE;

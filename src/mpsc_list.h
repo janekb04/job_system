@@ -25,8 +25,8 @@ private:
     static constexpr size_t COMPLETED_SENTINEL = 8;
 
 public:
-    ALWAYS_INLINE constexpr mpsc_list() noexcept = default;
-    constexpr mpsc_list(mpsc_list&& other) noexcept :
+    ALWAYS_INLINE constexpr mpsc_list() NOEXCEPT = default;
+    constexpr mpsc_list(mpsc_list&& other) NOEXCEPT :
         head{ other.head.exchange(reinterpret_cast<T*>(COMPLETED_SENTINEL), std::memory_order_relaxed) }
     {
     }

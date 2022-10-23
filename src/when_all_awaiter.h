@@ -23,7 +23,7 @@ private:
     {
     }
     template<size_t... I>
-    ALWAYS_INLINE constexpr bool await_ready(std::index_sequence<I...>) noexcept
+    ALWAYS_INLINE constexpr bool await_ready(std::index_sequence<I...>) NOEXCEPT
     {
         int already_done_dependencies_count = (static_cast<int>(std::get<I>(fs).add_dependent_to_promise(ns[I])) + ...);
         if (already_done_dependencies_count == sizeof...(Futures))
@@ -34,12 +34,12 @@ private:
         return false;
     }
     template<size_t I>
-    ALWAYS_INLINE [[nodiscard]] constexpr decltype(auto) get_future_result() noexcept
+    ALWAYS_INLINE [[nodiscard]] constexpr decltype(auto) get_future_result() NOEXCEPT
     {
         return std::forward_like<std::tuple_element<I, typename when_all_t<Futures...>::tuple_type>>(std::get<I>(fs).get());
     }
     template<size_t... I>
-    ALWAYS_INLINE [[nodiscard]] constexpr decltype(auto) await_resume(std::index_sequence<I...>) noexcept
+    ALWAYS_INLINE [[nodiscard]] constexpr decltype(auto) await_resume(std::index_sequence<I...>) NOEXCEPT
     {
         if constexpr (sizeof...(Futures) == 1)
         {
@@ -57,17 +57,17 @@ public:
     {
     }
 
-    ALWAYS_INLINE [[nodiscard]] constexpr bool await_ready() noexcept
+    ALWAYS_INLINE [[nodiscard]] constexpr bool await_ready() NOEXCEPT
     {
         return await_ready(index_sequence_for_this{});
     }
-    ALWAYS_INLINE [[nodiscard]] constexpr decltype(auto) await_resume() noexcept
+    ALWAYS_INLINE [[nodiscard]] constexpr decltype(auto) await_resume() NOEXCEPT
     {
         return await_resume(index_sequence_for_this{});
     }
 
     template<typename Promise>
-    ALWAYS_INLINE constexpr std::coroutine_handle<> await_suspend(std::coroutine_handle<Promise>) noexcept
+    ALWAYS_INLINE constexpr std::coroutine_handle<> await_suspend(std::coroutine_handle<Promise>) NOEXCEPT
     {
         return executor::pop();
     }

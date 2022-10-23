@@ -15,7 +15,7 @@ class task_graph_node_notifier : public mpsc_list_node
     using node = task_graph_node<OnNotify>;
 
 public:
-    ALWAYS_INLINE constexpr task_graph_node_notifier(node& task) noexcept :
+    ALWAYS_INLINE constexpr task_graph_node_notifier(node& task) NOEXCEPT :
         to_notify{ task }
     {
     }
@@ -38,20 +38,20 @@ class task_graph_node : public task_graph_node<nullptr>
     mpsc_list<notifier> list{};
 
 public:
-    ALWAYS_INLINE constexpr void set_dependency_count(size_t count) noexcept
+    ALWAYS_INLINE constexpr void set_dependency_count(size_t count) NOEXCEPT
     {
         deatomize(counter) = count;
     }
-    ALWAYS_INLINE constexpr void notify_dependents() noexcept
+    ALWAYS_INLINE constexpr void notify_dependents() NOEXCEPT
     {
-        list.complete_and_iterate([](notifier& n) noexcept
+        list.complete_and_iterate([](notifier& n) NOEXCEPT
                                   {
             if (n.to_notify.counter.fetch_sub(1, memory_order_relaxed) == 1)
             {
                 OnNotify(n.to_notify);
             } });
     }
-    ALWAYS_INLINE [[nodiscard]] constexpr bool add_dependent(notifier& n) noexcept
+    ALWAYS_INLINE [[nodiscard]] constexpr bool add_dependent(notifier& n) NOEXCEPT
     {
         if (list.try_enqueue(n))
         {

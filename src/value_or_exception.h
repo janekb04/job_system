@@ -13,7 +13,7 @@ template<>
 class value_or_exception<void, false>
 {
 public:
-    ALWAYS_INLINE constexpr void get() noexcept
+    ALWAYS_INLINE constexpr void get() NOEXCEPT
     {
     }
 };
@@ -25,7 +25,7 @@ private:
     std::exception_ptr exception;
 
 public:
-    ALWAYS_INLINE value_or_exception() noexcept :
+    ALWAYS_INLINE value_or_exception() NOEXCEPT :
         exception{}
     {
     }
@@ -55,7 +55,7 @@ protected:
     bool has_exception;
 
 public:
-    ALWAYS_INLINE constexpr store_as_union() noexcept :
+    ALWAYS_INLINE constexpr store_as_union() NOEXCEPT :
         has_exception{ false }
     {
     }
@@ -69,7 +69,7 @@ protected:
     std::exception_ptr exception;
 
 public:
-    ALWAYS_INLINE constexpr store_as_pair() noexcept :
+    ALWAYS_INLINE constexpr store_as_pair() NOEXCEPT :
         exception{}
     {
     }
@@ -82,14 +82,14 @@ private:
     alignas(alignof(T)) char data[sizeof(T)];
 
 public:
-    ALWAYS_INLINE constexpr value_or_exception() noexcept
+    ALWAYS_INLINE constexpr value_or_exception() NOEXCEPT
     {
     }
     ALWAYS_INLINE constexpr void set_value(T&& val) noexcept(std::is_nothrow_move_constructible_v<T>)
     {
         new (static_cast<T*>(static_cast<void*>(data))) T{ std::move(val) };
     }
-    ALWAYS_INLINE [[nodiscard]] constexpr T& get() noexcept
+    ALWAYS_INLINE [[nodiscard]] constexpr T& get() NOEXCEPT
     {
         return *static_cast<T*>(static_cast<void*>(data));
     }
@@ -100,7 +100,7 @@ template<typename T>
 class value_or_exception<T, true> : public store_as_union<T>
 {
 public:
-    ALWAYS_INLINE constexpr value_or_exception() noexcept :
+    ALWAYS_INLINE constexpr value_or_exception() NOEXCEPT :
         store_as_union<T>{}
     {
     }
@@ -128,7 +128,7 @@ template<typename T>
 class value_or_exception<T, true> : public store_as_pair<T>
 {
 public:
-    ALWAYS_INLINE constexpr value_or_exception() noexcept :
+    ALWAYS_INLINE constexpr value_or_exception() NOEXCEPT :
         store_as_pair<T>{}
     {
     }

@@ -44,7 +44,7 @@ struct when_all_t : std::tuple<Futures...>
 {
     when_all_t() = delete;
     // TODO: See if rvalue/lvalue-ness is preserved
-    ALWAYS_INLINE constexpr when_all_t(Futures... futures) noexcept :
+    ALWAYS_INLINE constexpr when_all_t(Futures... futures) NOEXCEPT :
         std::tuple<Futures...>{ static_cast<Futures>(futures)... }
     {
     }
@@ -53,7 +53,7 @@ struct when_all_t : std::tuple<Futures...>
 
 template<typename... Awaitables>
     requires(sizeof...(Awaitables) <= 249)
-ALWAYS_INLINE constexpr auto when_all(Awaitables&&... awaitables) noexcept
+ALWAYS_INLINE constexpr auto when_all(Awaitables&&... awaitables) NOEXCEPT
 {
     using namespace detail::when_all;
     return when_all_t{ get_job_or_its_future(awaitables)... };
