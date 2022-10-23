@@ -46,7 +46,7 @@ public:
         for (int i = 0; i < block_count; ++i)
         {
             char* const block_begin = begin + cache_line_bytes * i;
-            block_begin[ControlByte] ^= (1ull << ControlBit);
+            block_begin[ControlByte] &= ~(1ull << ControlBit);
         }
         return std::assume_aligned<cache_line_bytes>(reinterpret_cast<T*>(begin));
     }
@@ -63,7 +63,7 @@ public:
     {
         for (char* block_begin = data; block_begin < data + sizeof(data); block_begin += cache_line_bytes)
         {
-            block_begin[ControlByte] = 0;
+            block_begin[ControlByte] &= ~(1ull << ControlBit);
         }
     }
 };
