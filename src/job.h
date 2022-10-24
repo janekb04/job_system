@@ -33,6 +33,17 @@ public:
         return h.promise();
     }
 
+    // This function seems redundant, but it's needed to work around
+    // some weird behaviour (probably a compiler bug).
+    // Basically, the caller of the initial job cannot directly request
+    // the return value of the job. For some reason, a random value is returned.
+    // To fix that, this function is noinline, which forces the compiler
+    // to read the result from memory, instead of wherever it is getting it currently.
+    [[gnu::noinline]] [[nodiscard]] decltype(auto) get() const noexcept(Noexcept)
+    {
+        return get_future().get();
+    }
+
     ALWAYS_INLINE [[nodiscard]] friend constexpr auto operator co_await(auto&& self) NOEXCEPT
         requires std::same_as<std::remove_cvref_t<decltype(self)>, job<T, Noexcept>>
     {

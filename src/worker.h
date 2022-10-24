@@ -48,7 +48,7 @@ public:
                 {
                     co_return;
                 }();
-                batch_done.get().fetch_sub(1, memory_order_relaxed);
+                batch_done.get().fetch_sub(1, memory_order_release);
                 batch_done.get().notify_all();
             }
         };

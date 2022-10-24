@@ -43,7 +43,15 @@ struct worker_coroutine_initial_awaiter
     ALWAYS_INLINE std::coroutine_handle<> await_suspend(std::coroutine_handle<worker_coroutine_promise_type> h) const NOEXCEPT
     {
         using namespace detail::worker_coroutine;
-        set_worker_main_coroutine(h);
+
+        // For some reason, this significantly decreases the segfault rate
+        thread_local static bool first = true;
+        if (first)
+        {
+            set_worker_main_coroutine(h);
+            first = false;
+        }
+
         return executor_pop();
     }
 };

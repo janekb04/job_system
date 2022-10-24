@@ -46,7 +46,7 @@ static void test()
     {
         auto j = test_coro<I, true>();
         executor::run();
-        result = j.get_future().get();
+        result = j.get();
     }
     std::cout << "    fib(" << I << ") = " << result << " in: ";
     auto coro_time = executor::get_time();

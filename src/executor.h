@@ -23,7 +23,7 @@ class executor
 #else
     inline static constexpr size_t global_queue_size = 1024 * 1024;
 #endif
-    using global_queue_t = mpmc_queue<promise_base*, global_queue_size, cache_line_bytes - 1, CHAR_BIT - 1>;
+    using global_queue_t = mpmc_queue<promise_base*, global_queue_size>;
 
 private:
     inline static std::unique_ptr<executor> instance;
@@ -75,11 +75,11 @@ public:
         instance->ready_barrier2.arrive_and_wait();
         instance->begin_time = std::chrono::high_resolution_clock::now();
 
-        instance->batch_done.wait(instance->workers.size(), memory_order_relaxed);
+        instance->batch_done.wait(instance->workers.size(), memory_order_acquire);
         reset();
         for (int i = instance->workers.size() - 1; i >= 1; --i)
         {
-            instance->batch_done.wait(i, memory_order_relaxed);
+            instance->batch_done.wait(i, memory_order_acquire);
         }
     }
     ALWAYS_INLINE static void done() noexcept
