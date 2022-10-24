@@ -27,6 +27,8 @@ class executor
 
 private:
     inline static std::unique_ptr<executor> instance;
+    inline static std::atomic<bool>         instance_initialized;
+
     executor(size_t num_threads) :
         workers{ num_threads },
         queues{ num_threads },
@@ -34,8 +36,8 @@ private:
         running{ false },
         should_terminate{ false },
         batch_done{ -1 },
-        ready_barrier{ int(num_threads + 1) },
-        ready_barrier2{ int(num_threads + 1) }
+        workers_idle_between_batches{ int(num_threads + 1) },
+        workers_waiting_to_start_batch{ int(num_threads + 1) }
     {
         for (int i = 0; i < num_threads; ++i)
         {
@@ -45,42 +47,53 @@ private:
                 std::ref(running),
                 std::ref(should_terminate),
                 std::ref(batch_done),
-                std::ref(ready_barrier),
-                std::ref(ready_barrier2)
+                std::ref(workers_idle_between_batches),
+                std::ref(workers_waiting_to_start_batch),
+                on_worker_ready_for_begin
             };
         }
     }
-    ALWAYS_INLINE static void reset() noexcept
+
+    static void on_worker_ready_for_begin()
     {
-        instance->global_queue->reset();
-        for (auto& queue : instance->queues)
-        {
-            queue.reset();
-        }
+        instance_initialized.wait(false, memory_order_acquire);
+        instance->queues[worker::index()].reset();
     }
 
 public:
     ALWAYS_INLINE static void instantiate(size_t num_workers = std::thread::hardware_concurrency())
     {
         instance.reset(new executor(num_workers));
+        instance_initialized.store(true, memory_order_release);
+        instance_initialized.notify_all();
     }
-    ALWAYS_INLINE static void run() noexcept
+    ALWAYS_INLINE static decltype(auto) run(auto&& first_job_coroutine) noexcept
     {
-        instance->ready_barrier.arrive_and_wait();
-        instance->running.store(true, memory_order_relaxed);
-        instance->batch_done.store(instance->workers.size(), memory_order_relaxed);
-        instance->running.notify_all();
+        // Before workers arrive at this barrier, they call
+        // on_worker_ready_for_begin and reset their local queue
+        instance->workers_idle_between_batches.arrive_and_wait();
+        // At this point all workers finished the previous batch
+        // They are waiting at the second barier
+
+        // During this time, it is safe to enqueue the first job
+        // and do any other initialization
         instance->global_queue->reset2();
+        auto main_job = first_job_coroutine();
+        instance->batch_done.store(instance->workers.size(), memory_order_relaxed);
+        instance->running.store(true, memory_order_release);
         std::atomic_thread_fence(memory_order_seq_cst);
-        instance->ready_barrier2.arrive_and_wait();
+
+        instance->workers_waiting_to_start_batch.arrive_and_wait(); // Tell the workers to begin work
         instance->begin_time = std::chrono::high_resolution_clock::now();
 
         instance->batch_done.wait(instance->workers.size(), memory_order_acquire);
-        reset();
+        instance->global_queue->reset();
         for (int i = instance->workers.size() - 1; i >= 1; --i)
         {
             instance->batch_done.wait(i, memory_order_acquire);
         }
+
+        return main_job.get();
     }
     ALWAYS_INLINE static void done() noexcept
     {
@@ -89,17 +102,18 @@ public:
     }
     ALWAYS_INLINE static void destroy() noexcept
     {
-        instance->ready_barrier.arrive_and_wait();
+        instance->workers_idle_between_batches.arrive_and_wait();
         instance->running.store(true, memory_order_relaxed);
         instance->batch_done.store(-1, memory_order_relaxed);
         instance->running.notify_all();
         instance->should_terminate.store(true, memory_order_relaxed);
-        instance->ready_barrier2.arrive_and_wait();
+        instance->workers_waiting_to_start_batch.arrive_and_wait();
         for (auto& worker : instance->workers)
         {
             worker.join();
         }
         instance.reset();
+        instance_initialized.store(false, memory_order_release);
     }
     ALWAYS_INLINE static auto get_time() noexcept
     {
@@ -136,8 +150,8 @@ private:
     std::atomic<bool>                                     running;
     std::atomic<bool>                                     should_terminate;
     std::atomic<int>                                      batch_done;
-    std::barrier<>                                        ready_barrier;
-    std::barrier<>                                        ready_barrier2;
+    std::barrier<>                                        workers_idle_between_batches;
+    std::barrier<>                                        workers_waiting_to_start_batch;
     std::chrono::high_resolution_clock::time_point        begin_time;
     std::chrono::high_resolution_clock::duration          time;
 };

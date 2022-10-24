@@ -30,15 +30,17 @@ public:
                   std::reference_wrapper<std::atomic<bool>> should_terminate,
                   std::reference_wrapper<std::atomic<int>>  batch_done,
                   std::reference_wrapper<std::barrier<>>    ready_barrier,
-                  std::reference_wrapper<std::barrier<>>    ready_barrier2)
+                  std::reference_wrapper<std::barrier<>>    ready_barrier2,
+                  auto&&                                    on_ready_for_begin)
         {
             thread_index = index;
             set_this_thread_affinity(index);
             while (true)
             {
+                on_ready_for_begin();
                 ready_barrier.get().arrive_and_wait();
-                running.get().wait(false, memory_order_relaxed);
                 ready_barrier2.get().arrive_and_wait();
+                running.get().load(memory_order_acquire);
                 std::atomic_thread_fence(memory_order_seq_cst);
                 if (should_terminate.get().load(memory_order_relaxed) == true)
                 {

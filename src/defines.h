@@ -3,7 +3,7 @@
 
 #include <atomic>
 
-#define ALWAYS_INLINE      //[[gnu::always_inline]]
+#define ALWAYS_INLINE      //[[gnu::always_inline]] TODO: try uncommenting these
 #define NOINLINE           //[[gnu::noinline]]
 #define NOEXCEPT           // noexcept(__VA_ARGS__)
 #define ASSUME_UNREACHABLE __builtin_unreachable()

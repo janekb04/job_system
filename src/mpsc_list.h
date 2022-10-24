@@ -55,8 +55,7 @@ public:
             {
                 T* cur  = p;
                 T* next = static_cast<T*>(p->_next);
-                // p->_next = reinterpret_cast<T*>(COMPLETED_SENTINEL); // DEBUG
-                p = next;
+                p       = next;
                 func(*cur);
             }
     }

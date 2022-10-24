@@ -42,12 +42,8 @@ NOINLINE int test_normal(int& invocations)
 template<int I>
 static void test()
 {
-    int result;
-    {
-        auto j = test_coro<I, true>();
-        executor::run();
-        result = j.get();
-    }
+    int result = executor::run(test_coro<I, true>);
+
     std::cout << "    fib(" << I << ") = " << result << " in: ";
     auto coro_time = executor::get_time();
     std::cout << "coro[" << coro_time.count() / 1e6 << "ms], ";
@@ -72,28 +68,31 @@ static void test()
 int main()
 {
     set_this_process_priority_high();
-    // TODO: fix occasional spontaneous segfaults
-    for (int i = 1; i <= std::thread::hardware_concurrency(); ++i)
+
+    while (true)
     {
-        std::cout << "Testing with " << i << " threads:\n";
-        // Multiple calls to instantiate work
-        // Works with any number of worker threads
-        executor::instantiate(i);
-        // Multiple calls to run work
-        test<10>();
-        test<10>();
-        test<10>();
-        test<10>();
-        test<10>();
-        test<10>();
-        test<10>();
-        test<27>();
-        test<27>();
-        test<27>();
-        test<27>();
-        test<27>();
-        test<27>();
-        test<27>();
-        executor::destroy();
+        for (int i = 1; i <= std::thread::hardware_concurrency(); ++i)
+        {
+            std::cout << "Testing with " << i << " threads:\n";
+            // Multiple calls to instantiate work
+            // Works with any number of worker threads
+            executor::instantiate(i);
+            // Multiple calls to run work
+            test<10>();
+            test<10>();
+            test<10>();
+            test<10>();
+            test<10>();
+            test<10>();
+            test<10>();
+            test<27>();
+            test<27>();
+            test<27>();
+            test<27>();
+            test<27>();
+            test<27>();
+            test<27>();
+            executor::destroy();
+        }
     }
 }
