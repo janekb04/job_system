@@ -23,7 +23,26 @@ class executor
 #else
     inline static constexpr size_t global_queue_size = 1024 * 1024;
 #endif
-    using global_queue_t = mpmc_queue<promise_base*, global_queue_size>;
+#ifdef EXECUTOR_BLOCK_ALIGNMENT
+    inline static constexpr size_t block_alignment = EXECUTOR_BLOCK_ALIGNMENT;
+#else
+    inline static constexpr size_t block_alignment   = alignof(promise_base*);
+#endif
+
+private:
+    struct block
+    {
+        alignas(block_alignment) promise_base* data;
+        block() = default;
+        block(promise_base* data) :
+            data(data)
+        {
+        }
+        operator promise_base*() const noexcept
+        {
+            return data;
+        }
+    };
 
 private:
     inline static std::unique_ptr<executor> instance;
@@ -32,7 +51,7 @@ private:
     executor(size_t num_threads) :
         workers{ num_threads },
         queues{ num_threads },
-        global_queue{ std::make_unique<global_queue_t>() },
+        global_queue{ std::make_unique<mpmc_queue<block, global_queue_size>>() },
         running{ false },
         should_terminate{ false },
         batch_done{ -1 },
@@ -145,8 +164,8 @@ public:
 
 private:
     std::vector<std::thread>                              workers;
-    std::vector<thread_local_queue_buffer<promise_base*>> queues;
-    std::unique_ptr<global_queue_t>                       global_queue; // Control byte assumes little endian
+    std::vector<thread_local_queue_buffer<block>>         queues;
+    std::unique_ptr<mpmc_queue<block, global_queue_size>> global_queue; // Control byte assumes little endian
     std::atomic<bool>                                     running;
     std::atomic<bool>                                     should_terminate;
     std::atomic<int>                                      batch_done;
