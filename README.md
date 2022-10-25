@@ -188,3 +188,52 @@ supported, but on each job launch, they allocate heap memory. It is planned to
 optimize the performance on these compilers, by overloading the `promise`s `operator new` to
 allocate a launched job within the parent job's coroutine frame (which would have scratch
 space inside).
+
+## Wait-free-ness
+
+Being wait-free means that it is guaranteed that all threads are always making progress - that there are no threads which are sleeping, waiting or in other way blocked. This job system is wait free - assuming that it has work to do.
+
+A worker thread can block only in one place - inside `execuctor::pop`, while waiting for
+new jobs to be written to the global queue. It is a busy wait, so it will resume practically
+immediately after a different thread has written the jobs. The key thing is that the reader
+thread doesn't wait for any specific writer. It isn't waiting for a concrete thread
+to enqueue job. Instead, it waits for any thread to enqueue a batch of jobs. Proof below.
+
+> * At time `T` let `N` be equal to the number of threads in total and `W` to the number of threads which are waiting.
+Let `J` be equal to the number of ready jobs - jobs whose dependencies have all completed and could start being executed at time `T`.
+
+>  * A given cache-line can be in one of six states:
+>       * Not having been written to (state `1**`)
+>           * and a reader is currently blocked on it (state `1R*`)
+>              * and a writer is currently writing to it (state `1RW`)
+>              * and no writer is currently writing to it (state `1R-`)
+>           * and no reader is currently blocked on it (`1-*`)
+>              * and a writer is currently writing to it (state `1-W`)
+>              * and no writer is currently writing to it (state `1--`)
+>       * Written to but not yet read (state `2`)
+>       * Written and read (state `3`)
+
+>  * Because the writer iterator is monotonically increasing, when a writer writes a new batch of jobs, it is guaranteed to write them to a `1R-` or `1--` cacheline. The line will then enter either the `1RW` or `1-W` state. After the write is complete, the cacheline will become `2`.
+>  * Lemma 1: if there exists a `1R-` cacheline, an enqueue operation cannot happen on a `1--` cacheline
+>       1. By contradiction: let's assume that there exists a `1R-` cacheline and a thread writes to a `1--` cacheline
+>       2. Let `A` be the index (value of the iterator) of the cacheline in `1R-`.
+>       3. Let `B` be the index (value of the iterator) of the cacheline in `1--`.
+>       4. Recall that the reader iterator is monotonically increasing by one (by assumption, as the only operation used on it is a `fetch_add(1)`).
+>       5. Because there is a reader with an index `A`, there must also have been readers
+for all indices smaller than `A`. This means that all cachelines with an index smaller than `A` must be `1R-`, `1RW` or `3`.
+>       6. Hence, `B > A` as a cacheline with an index smaller than `A` cannot be `1--`.
+>       7. Recall that the writer iterator is also monotonically increasing by one.
+>       8. Because there is a writer with an index `B`, there must also have been writers for all indices smaller than `B`. This means that all cachelines with an index smaller than `B` must be `1RW`, `1-W`, `2`, or `3`.
+>       9. From (6.) `B > A`. Yet from (8.) `A` cannot be in `1R-`. Contradiction.
+>  * The above implies that if there exists a `1R-` cacheline, a writer must write to a `1R-` cacheline. This means that if there exist blocked reader threads, one of them is guaranteed to unblock as soon as a batch of jobs will be enqueued by any thread.
+
+>  * Because the reader iterator is monotonically increasing, when a reader reads a new batch of jobs, it is guaranteed to read the from a `1-W`, `1--` or `2` cacheline. The line will then enter either the `1RW` or `1R-` state or stay `2`. After the write is complete, the cacheline will become `3`.
+>  * Lemma 2: if there exists a `2` cacheline, a dequeue operation cannot happen on a `1-W` or `1--` cacheline.
+>       1. By contradiction: let's assume that there exists a `2` cacheline and a thread reads from a `1-*` (`1-W` or `1--`) cacheline.
+>       2. Let `A` be the index of the cacheline in `2`.
+>       3. Let `B` be the index of the cacheline in `1-*`.
+>       4. Recall that the writer iterator is monotonically increasing by one.
+>       5. Because
+
+>  * Let's consider the timeline of a blocked reader thread. It starts out unblocked. Then, it initiates a read operation and blocks at time `T0`. It is blocked until it gets unblocked at time `T1`.
+>  * Now, let's consider how the number of jobs in the global queue changes over time. At time `T0`
