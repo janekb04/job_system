@@ -5,6 +5,14 @@
 
 This repository contains a job system. It is essentially a library which is supposed to aid in multithreaded programming. **EXPERIMENTAL AND NOT READY FOR PRODUCTION USE**.
 
+## A note on stability and performance
+
+This project is currently in the very early stages. It has been tested on an arm64 CPU (with a
+memory model weaker than x86) and seems to work - it doesn't segfault after many hours of
+running. Still, as it always goes with lock-free code, it is likely that some synchronization
+bugs are still present. Currently, the executable runs a test which calculates the overhead
+of launching and waiting for a job compared to a function call. It seems to be around `20ns` per call on the test CPU (Apple M1 Pro). This is less than the latency of a fetch from main memory, which is the performance goal of the project.
+
 ## Usage
 
 Simply declare functions as jobs, by making them return a `job<ReturnType, IsNoexcept>`.
