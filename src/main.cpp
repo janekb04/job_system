@@ -25,7 +25,7 @@ static job<int, true> test_coro()
 }
 
 template<int I>
-NOINLINE int test_normal(int& invocations)
+[[gnu::noinline]] int test_normal(int& invocations)
 {
     ++invocations;
     if constexpr (I == 0 || I == 1)
@@ -53,10 +53,7 @@ static void test()
         auto result2     = test_normal<I>(invocations);
         if (result != result2)
         {
-            // I know: it must be the call to test_normal
-            // removing std::cout makes it eliminated
-
-            // std::cout << "Result mismatch: " << result << " != " << result2 << std::endl;
+            std::cout << "Result mismatch: " << result << " != " << result2 << std::endl;
         }
         auto end  = std::chrono::high_resolution_clock::now();
         auto time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
