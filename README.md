@@ -143,7 +143,7 @@ this linked list does not use any dynamic memory allocation.
 
 When a job `co_await`s a (possibly 1-sized) set of dependency jobs, it does a few things.
 Firstly its promise sets its own internal atomic counter to the number of dependency jobs.
-Then, it allocates a dependency-count-sized array of `notifier` objects. The `notifier` type
+Then, it allocates (on the stack) a dependency-count-sized array of `notifier` objects. The `notifier` type
 is the type of the linked list's node. The created `notifier`s all point to the job
 being suspended. They do not have a next node.
 
@@ -191,7 +191,7 @@ space inside).
 
 ## Wait-free-ness
 
-Being wait-free means that it is guaranteed that all threads are always making progress - that there are no threads which are sleeping, waiting or in other way blocked. This job system is almost wait free - assuming that it has work to do.
+Being wait-free means that it is guaranteed that all threads are always making progress - that there are no threads which are sleeping, waiting or in other way blocked. This job system is almost wait free - it is wait free as long as it has work to do.
 
 A worker thread can block only in one place - inside `execuctor::pop`, while waiting for
 new jobs to be written to the global queue. It is a busy wait, so it will resume practically
