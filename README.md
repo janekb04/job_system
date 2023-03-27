@@ -22,7 +22,7 @@ job<Renderer> createRenderer();
 ```
 Start running jobs with `executor::run(main_job_func)`. The executor will start running the `main_job`. Newly created jobs will be executed on multiple threads, if they don't depend on each other. `run` will return when the `main_job` will return.
 ```cpp
-job<int> app_main;
+job<int> app_main();
 ...
 executor::initialize(num_threads);
 int exit_code = executor::run(app_main);
