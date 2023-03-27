@@ -1,7 +1,7 @@
 # Coroutine-based Concurrent C++ Job System
 * **New-Free** (no dynamic memory allocations)
-* **Lock-free** (only atomics used for synchronisation)
-* **Wait-free** (as long as there's work to do, threads are guaranteed to never stall)
+* **Lock-free** (guaranteed system-wide progress)
+* Almost **Wait-free** (see below)
 
 This repository contains a job system. It is essentially a library which is supposed to aid in multithreaded programming. **EXPERIMENTAL AND NOT READY FOR PRODUCTION USE**.
 
@@ -189,21 +189,26 @@ optimize the performance on these compilers, by overloading the `promise`s `oper
 allocate a launched job within the parent job's coroutine frame (which would have scratch
 space inside).
 
-## Wait-free-ness
+## Lock/Wait-free-ness
 
-Being wait-free means that it is guaranteed that all threads are always making progress - that there are no threads which are sleeping, waiting or in other way blocked. This job system is almost wait free - it is wait free as long as it has work to do.
+A lock-free system is a system with guaranteed system-wide progress, while a wait-free system is a system with guaranteed per-thread progress. Basically, consider a system that has `N` threads. If it is lock-free, it is guaranteed that always at least one thread is working (it is not blocked). If it is wait-free, it is guaranteed that always all `N` threads will be working.
 
-A worker thread can block only in one place - inside `execuctor::pop`, while waiting for
-new jobs to be written to the global queue. It is a busy wait, so it will resume practically
-immediately after a different thread has written the jobs. The key thing is that the reader
-thread doesn't wait for any specific writer. It isn't waiting for a concrete thread
-to enqueue job. Instead, it waits for any thread to enqueue a batch of jobs. Proofs below.
+There exist only three waits in the job system:
+1. Threads contending on a depedency list of certain job - ie. threads trying to add a dependency to a job.
+2. A reader thread waiting on a cacheline for a writer thread to begin writing to it.
+3. A reader thread waiting on a cacheline that is currently being written to by a writer thread.
 
-## Proofs
+### Threads contending on a job dependency list
+
+The first wait is a real wait. If multiple threads try to add a dependency to the same job at once, they will have to do it one by one. This means that, in general, the job system technically isn't lock free. Still, I feel comfortable with calling the job system almost wait-free, as this CAS loop isn't a central part of the job system. This situation has a very low probability of happening, and only, if the job system is used in a certain way. In order for this to happen, at least two independently scheduled jobs would need to have access to a job's future and they would both need to add a dependecy to it, for example by waiting on it, and they would have to do that at once. The vast majority of jobs are single-waiter - they have only a single dependent. It is rather rare to schedule a job and then pass its future to other jobs, so they could wait on it.
+
+### Reader waiting for there being any work to do
+
+Regarding the second wait, it occurs rather frequently. Still, I argue that after thinking about it, you can realize that it does not qualify to be a real wait. This wait essentially means that a reader thread cannot progress because there are not jobs on its cacheline and noone is writing to that cacheline. Well then, why is noone writing to that cacheline? The answer is that either there are no ready threads at all or there are ready threads, but have or are being written to other cachelines. To me, the first option isn't a real wait, as what the reader is waiting for is for there to be work to be done. It seems rather logical to me that all systems have to wait until they are given work to do. The second wait is actually impossible. Below, I prove that a writer is guaranteed to unblock a reader (if one exists) when writing jobs. In other words, it is impossible for a writer to write a batch of jobs somewhere, when no reader is waiting, while readers are waiting somewhere else.
 
 Firstly, let's introduce some definitions.
 
->  * At time `T` let `N` be equal to the number of threads in total and `W` to the number of threads which are waiting. Let `J` be equal to the number of ready jobs - jobs, whose dependencies have all completed and could start being executed at time `T`.
+>  * Let `R` be the reader iterator and `W` be the writer iterator.
 >  * A given cache-line can be in one of six states:
 >       * Not having been written to (state `1**`)
 >           * and a reader is currently blocked on it (state `1R*`)
@@ -217,29 +222,49 @@ Firstly, let's introduce some definitions.
 
 Now, let's prove that enqueuing new jobs is guaranteed to unblock a blocked reader thread (if one exists):
 
->  * Because the writer iterator is monotonically increasing, when a writer writes a new batch of jobs, it is guaranteed to write them to a `1R-` or `1--` cacheline. The line will then enter either the `1RW` or `1-W` state. After the write is complete, the cacheline will become `2`.
+>  * Because `W` is monotonically increasing, when a writer writes a new batch of jobs, it is guaranteed to write them to a `1R-` or `1--` cacheline. The line will then enter either the `1RW` or `1-W` state. After the write is complete, the cacheline will become `2`.
 >  * Lemma 1: if there exists a `1R-` cacheline, an enqueue operation cannot happen on a `1--` cacheline
 >       1. By contradiction: let's assume that there exists a `1R-` cacheline and a thread writes to a `1--` cacheline
 >       2. Let `A` be the index (value of the iterator) of the cacheline in `1R-`.
 >       3. Let `B` be the index (value of the iterator) of the cacheline in `1--`.
->       4. Recall that the reader iterator is monotonically increasing by one (by assumption, as the only operation used on it is a `fetch_add(1)`).
+>       4. Recall that `R` is monotonically increasing.
 >       5. Because there is a reader with an index `A`, there must also have been readers
 for all indices smaller than `A`. This means that all cachelines with an index smaller than `A` must be `1R-`, `1RW` or `3`.
 >       6. Hence, `B > A` as a cacheline with an index smaller than `A` cannot be `1--`.
->       7. Recall that the writer iterator is also monotonically increasing by one.
+>       7. Recall that `W` is also monotonically increasing.
 >       8. Because there is a writer with an index `B`, there must also have been writers for all indices smaller than `B`. This means that all cachelines with an index smaller than `B` must be `1RW`, `1-W`, `2`, or `3`.
->       9. From (6.) `B > A`. Yet from (8.) `A` cannot be in `1R-`. Contradiction.
+>       9. From (vi.) `B > A`. Yet from (viii.) `A` cannot be in `1R-`. Contradiction.
 >  * The above implies that if there exists a `1R-` cacheline, a writer must write to a `1R-` cacheline. This means that if there exist blocked reader threads, one of them is guaranteed to unblock as soon as a batch of jobs will be enqueued by any thread.
 
-Now, let's prove that a reader thread is guaranteed not to block, if there exist any ready jobs:
+Ok, so we proved that a writer will never "not notice" a reader and leave it blocked. But what about the other way around? Could a reader not notice a ready (written to) cacheline and instead block on an unready (not written to) cacheline? Well, no. Here's the proof.
 
->  * Because the reader iterator is monotonically increasing, when a reader reads a new batch of jobs, it is guaranteed to read the from a `1-W`, `1--` or `2` cacheline. The line will then enter either the `1RW` or `1R-` state or stay `2`. After the write is complete, the cacheline will become `3`.
->  * Lemma 2: if there exists a `2` cacheline, a dequeue operation cannot happen on a `1-W` or `1--` cacheline.
->       1. By contradiction: let's assume that there exists a `2` cacheline and a thread reads from a `1-*` (`1-W` or `1--`) cacheline.
+>  * Because `R` is monotonically increasing, when a reader reads a new batch of jobs, it is guaranteed to read the from a `1-W`, `1--` or `2` cacheline. The line will then enter either the `1RW` or `1R-` state or stay `2`. After the read is complete, the cacheline will become `3`. Here, we consider a reader reading from a not written to cacheline - a reader reading from a `1--` cacheline.
+>  * Lemma 2: if there exists a `2` cacheline, a dequeue operation cannot happen on a `1--` cacheline.
+>       1. By contradiction: let's assume that there exists a `2` cacheline and a thread is about to read from a `1--` cacheline.
 >       2. Let `A` be the index of the cacheline in `2`.
->       3. Let `B` be the index of the cacheline in `1-*`.
->       4. Recall that the writer iterator is monotonically increasing by one.
->       5. Because
+>       3. Let `B` be the index of the cacheline in `1--`. Because the reader is about to read from this cacheline `R = B`.
+>       4. Recall that `W` is monotonically increasing.
+>       5. Because cacheline `A` has been written to, there must also have been writers for all indices smaller than `A`. This means that all cachelines with an index smaller than `A` must be `1RW`, `1-W` or `2`.
+>       6. Hence, `B > A` as a cacheline with an index smaller than `A` cannot be `1--`.
+>       7. Recall that `W` is also monotonically increasing.
+>       8. Because a reader is about to read from cacheline `B`, there must have been readers for all indices smaller than `B`. This means that all cachelines with an index smaller than `B` must be `1RW`, `1R-`, or `3`.
+>       9. From (vi.) `B > A`. Yet from (viii.) `A` cannot be in `2`. Contradiction.
+> * The above implies that if there exists a `2` cacheline, a reader must read from a `2` cacheline or a `1-W` cacheline. This means that if there exist any jobs to be done, a reader is guaranteed to "pick them up" as soon as it will become available, unless it will read a `1-W` cacheline.
 
->  * Let's consider the timeline of a blocked reader thread. It starts out unblocked. Then, it initiates a read operation and blocks at time `T0`. It is blocked until it gets unblocked at time `T1`.
->  * Now, let's consider how the number of jobs in the global queue changes over time. At time `T0`
+Regarding reading from a cacheline that is currently being written to (state `1-W`), see the section below.
+
+### Reader waiting for a writer to write `64 bytes`
+
+Regarding the third wait, it is also relatively unlikely. However, in addition to that, I'd like to explain a bit more about why I don't believe that these two waits make the job system cease to deserve a "wait-free-ness" badge.
+
+It is the OS that gives CPU time to processes. It can arbitrarly pause any thread and then resume it at some other point in time. This means that a thread can be in three states: it can be _working_, _blocked_ or _sleeping_. At time `T`, a thread is said to be working if it is currently running on the CPU and performing "useful" work (a spinlock doesn't count). A sleeping thread isn't currently running on the CPU. It is a thread that will immediately become a working thread or a blocked thread, if resumed by the OS, regardless of any circumstances. Usually, when talking about lock-free-ness or wait-free-ness, sleeping threads are disregarded. That is because if we took them into account, no system could, in general, be lock-free. After all, the OS could put the entire process to sleep at once, in which case the requirement of lock-free-ness wouldn't be fulfilled. As such, when looking at a particular thread, we assume that it never sleeps.
+
+However, we don't assume that the system overall doesn't sleep. To give an example, when considering a reader thread, we assume it to never sleep. Let's say that at some point in time it begins waiting for a writer thread to finish writing to a cacheline. You could think that the reader thread isn't waiting at all, as, after all, writing a single cacheline is nearly instantaneous, and if we know that the writer has already began writing to the cacheline, it will complete nearly immediately, and hence the reader thread will unblock nearly immediately. Still, this doesn't technically count as wait-free-ness. After all, although from the point of view of the reader, it never sleeps, this doesn't hold for other threads. Other threads can be put to sleep or resumed at any point in time. This means that the reader is blocked on the writer and the reader-writer system is not wait-free. It is lock-free, however, because from the point of view of the writer, it never sleeps, and it isn't waiting on anything, so it is always making progress. As soon as the reader unblocks, the system will become wait-free.
+
+In reality, lock-free `!=` lock-free. Consider two systems. In one system the main thread is blocked until all workers complete some background computation. In the other system, a reader thread is blocked on a writer thread until it writes `64 bytes`. Although from a theoretical standpoint, these systems are both only lock-free, the second system is clearly "more" lock-free than the first one. I even dare to call it "almost wait-free" because the waiting time is equal to the time it takes to write `64 bytes` by the writer thread plus the amount of time the writer spends sleeping. In reality, this time will be negligible. This is why I consider this system to be "almost wait-free".
+
+
+
+
+
+
