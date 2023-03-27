@@ -1,7 +1,7 @@
 # Coroutine-based Concurrent C++ Job System
-* Heap Free
-* Lock-free
-* Almost Wait-free* (see below)
+* **New-Free** (no dynamic memory allocations)
+* **Lock-free** (only atomics used for synchronisation)
+* **Wait-free** (as long as there's work to do, threads are guaranteed to never stall)
 
 This repository contains a job system. It is essentially a library which is supposed to aid in multithreaded programming. **EXPERIMENTAL AND NOT READY FOR PRODUCTION USE**.
 
@@ -10,7 +10,7 @@ This repository contains a job system. It is essentially a library which is supp
 This project is currently in the very early stages. It has been tested on an arm64 CPU (with a
 memory model weaker than x86) and seems to work - it doesn't segfault after many hours of
 running. Still, as it always goes with lock-free code, it is likely that some synchronization
-bugs are still present. Currently, the executable runs a test which calculates the overhead
+bugs are still present. Currently, the executable runs a test, which calculates the overhead
 of launching and waiting for a job compared to a function call. It seems to be around `20ns` per call on the test CPU (Apple M1 Pro). This is less than the latency of a fetch from main memory, which is the performance goal of the project.
 
 ## Usage
@@ -57,7 +57,7 @@ job<Renderer> createRenderer()
 ### Thread specific buffers
 When a job is launched, it does not start executing immediately.
 It is appended to a small thread-specific local ring-buffer queue using `executor::push`.
-Then control is returned to parent job.
+Then, control is returned to its parent job.
 
 When a job returns or is suspended at a `co_await` expression, a new job is selected using `executor::pop`. If the thread-specific buffer isn't empty, the job is selected from there.
 If the buffer is empty, the buffer is first refilled from a global job queue.
@@ -69,27 +69,27 @@ it would be possible for a different thread to pick up a job and start executing
 before it finished running on the publisher thread.
 
 The queues are small enough to be allocated up front, when the executor is initialized, so
-`push`ing and `pop`ping jobs doesn't cause any allocations. By default they have a capacity
-of 256 jobs each. This eliminates the use of moduli in their implementation. Instead the
-ring buffer iterators are simply `unsigned char`s which wrap around automatically. A limitation
+`push`ing and `pop`ping jobs doesn't cause any allocations. By default, they have a capacity
+of 256 jobs each. This eliminates the use of moduli in their implementation. Instead, the
+ring buffer iterators are simply `uint8_t`s, which wrap around automatically. A limitation
 of this is that a job can have at most 249 dependencies. It is not 256 because there can be
-already at most 7 jobs in the queue (assuming a 64-byte cache line, read below).
+already at most 7 jobs in the queue (assuming a 64-byte cache line; read below).
 
 ### The global MPMC queue
 
 The global queue is a multi-producer multi-consumer lock-free queue. Jobs are `push`ed to it
 and `pop`ped from it in cache-line sized blocks. This is because the [MOESI](https://en.wikipedia.org/wiki/MOESI_protocol) protocol operates
-at a cache line granularity. By disallowing reads or writes to the queue spanning
-cache line boundaries, it is guaranteed that at most two threads will be ever
-contending for a piece of the queue data - the writer and the reader.
+at a cache line granularity. By disallowing reads or writes to the queue spanning across
+cache line boundaries, it is guaranteed that at most two threads will ever be
+contending for a piece of the queue data - *the writer* and *the reader*.
 
 When a thread wants to `enqueue` a batch of jobs to the global queue, it is given
-a write iterator, which tells is where it can put the jobs. The write iterator is
+a *write iterator*, which tells it where it can put the jobs. The write iterator is
 simply an index into the queue's underlying data array. The write iterator is obtained from a
 monotonically increasing atomic counter. No two writers can receive the same iterator. This eliminates all race conditions between writers.
 
 When a thread wants to `dequeue` a batch of jobs from the global queue, it is given
-a read iterator. It is very similar to the write iterator. It is also monotonically
+a *read iterator*. It is very similar to the write iterator. It is also monotonically
 increasing, so it ensures that a given batch of jobs will be read by only one thread.
 
 Understanding how the reader and the writer synchronize with each other on a given cache line
@@ -118,7 +118,7 @@ union cache_line
 cache_line buffer[ARRAY_SIZE / sizeof(promise_base*)];
 ```
 In code, this is implemented more generically, but the above illustration
-is a good exposition, of how it actually works.
+is a good exposition of how it actually works.
 
 Access to a cache line is synchronized via an atomic variable stored in the last byte
 of each cache line. It works on the assumption that the system is little-endian and
@@ -142,7 +142,7 @@ Each node stores a pointer to the dependent's promise and the next node. Interes
 this linked list does not use any dynamic memory allocation.
 
 When a job `co_await`s a (possibly 1-sized) set of dependency jobs, it does a few things.
-Firstly its promise sets its own internal atomic counter to the number of dependency jobs.
+Firstly, its promise sets its own internal atomic counter to the number of dependency jobs.
 Then, it allocates (on the stack) a dependency-count-sized array of `notifier` objects. The `notifier` type
 is the type of the linked list's node. The created `notifier`s all point to the job
 being suspended. They do not have a next node.
@@ -197,11 +197,13 @@ A worker thread can block only in one place - inside `execuctor::pop`, while wai
 new jobs to be written to the global queue. It is a busy wait, so it will resume practically
 immediately after a different thread has written the jobs. The key thing is that the reader
 thread doesn't wait for any specific writer. It isn't waiting for a concrete thread
-to enqueue job. Instead, it waits for any thread to enqueue a batch of jobs. Proof below.
+to enqueue job. Instead, it waits for any thread to enqueue a batch of jobs. Proofs below.
 
-> * At time `T` let `N` be equal to the number of threads in total and `W` to the number of threads which are waiting.
-Let `J` be equal to the number of ready jobs - jobs whose dependencies have all completed and could start being executed at time `T`.
+## Proofs
 
+Firstly, let's introduce some definitions.
+
+>  * At time `T` let `N` be equal to the number of threads in total and `W` to the number of threads which are waiting. Let `J` be equal to the number of ready jobs - jobs, whose dependencies have all completed and could start being executed at time `T`.
 >  * A given cache-line can be in one of six states:
 >       * Not having been written to (state `1**`)
 >           * and a reader is currently blocked on it (state `1R*`)
@@ -212,6 +214,8 @@ Let `J` be equal to the number of ready jobs - jobs whose dependencies have all 
 >              * and no writer is currently writing to it (state `1--`)
 >       * Written to but not yet read (state `2`)
 >       * Written and read (state `3`)
+
+Now, let's prove that enqueuing new jobs is guaranteed to unblock a blocked reader thread (if one exists):
 
 >  * Because the writer iterator is monotonically increasing, when a writer writes a new batch of jobs, it is guaranteed to write them to a `1R-` or `1--` cacheline. The line will then enter either the `1RW` or `1-W` state. After the write is complete, the cacheline will become `2`.
 >  * Lemma 1: if there exists a `1R-` cacheline, an enqueue operation cannot happen on a `1--` cacheline
@@ -226,6 +230,8 @@ for all indices smaller than `A`. This means that all cachelines with an index s
 >       8. Because there is a writer with an index `B`, there must also have been writers for all indices smaller than `B`. This means that all cachelines with an index smaller than `B` must be `1RW`, `1-W`, `2`, or `3`.
 >       9. From (6.) `B > A`. Yet from (8.) `A` cannot be in `1R-`. Contradiction.
 >  * The above implies that if there exists a `1R-` cacheline, a writer must write to a `1R-` cacheline. This means that if there exist blocked reader threads, one of them is guaranteed to unblock as soon as a batch of jobs will be enqueued by any thread.
+
+Now, let's prove that a reader thread is guaranteed not to block, if there exist any ready jobs:
 
 >  * Because the reader iterator is monotonically increasing, when a reader reads a new batch of jobs, it is guaranteed to read the from a `1-W`, `1--` or `2` cacheline. The line will then enter either the `1RW` or `1R-` state or stay `2`. After the write is complete, the cacheline will become `3`.
 >  * Lemma 2: if there exists a `2` cacheline, a dequeue operation cannot happen on a `1-W` or `1--` cacheline.
